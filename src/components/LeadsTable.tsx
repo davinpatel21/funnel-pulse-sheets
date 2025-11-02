@@ -34,7 +34,7 @@ const statusColors = {
 
 export const LeadsTable = () => {
   return (
-    <Card className="p-6 bg-gradient-card shadow-card border border-border">
+    <Card className="p-6 bg-gradient-card shadow-card hover:shadow-intense border border-border transition-all duration-500 animate-fade-in">
       <h2 className="text-xl font-bold text-foreground mb-4">Recent Leads</h2>
       <div className="rounded-lg border border-border overflow-hidden">
         <Table>
@@ -48,14 +48,18 @@ export const LeadsTable = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {leads.map((lead) => (
-              <TableRow key={lead.id} className="hover:bg-muted/30 transition-colors">
+            {leads.map((lead, index) => (
+              <TableRow 
+                key={lead.id} 
+                className="hover:bg-muted/30 transition-all duration-300 hover:scale-[1.01] animate-fade-in"
+                style={{ animationDelay: `${index * 50}ms` }}
+              >
                 <TableCell className="font-medium">{lead.name}</TableCell>
                 <TableCell className="text-muted-foreground">{lead.email}</TableCell>
                 <TableCell>{lead.stage}</TableCell>
                 <TableCell className="font-semibold text-foreground">{lead.value}</TableCell>
                 <TableCell>
-                  <Badge variant="outline" className={statusColors[lead.status]}>
+                  <Badge variant="outline" className={`${statusColors[lead.status]} transition-all duration-300 hover:scale-110`}>
                     {lead.status.toUpperCase()}
                   </Badge>
                 </TableCell>

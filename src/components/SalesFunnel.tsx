@@ -18,34 +18,34 @@ const stages: FunnelStage[] = [
 
 export const SalesFunnel = () => {
   return (
-    <Card className="p-6 bg-gradient-card shadow-card border border-border">
+    <Card className="p-6 bg-gradient-card shadow-card border border-border animate-fade-in">
       <h2 className="text-xl font-bold text-foreground mb-6">Sales Funnel</h2>
       <div className="space-y-3">
         {stages.map((stage, index) => (
-          <div key={stage.name} className="relative">
+          <div key={stage.name} className="relative animate-fade-in" style={{ animationDelay: `${index * 100}ms` }}>
             <div 
-              className="rounded-lg p-4 transition-all duration-300 hover:scale-[1.02]"
+              className="group rounded-lg p-4 transition-all duration-500 ease-smooth hover:scale-[1.02] hover:shadow-intense cursor-pointer"
               style={{
                 width: `${stage.percentage}%`,
                 minWidth: '300px',
                 background: `linear-gradient(135deg, 
-                  hsl(217 91% ${35 + index * 5}%), 
-                  hsl(217 91% ${45 + index * 5}%))`
+                  hsl(0 0% ${90 - index * 10}%), 
+                  hsl(0 0% ${80 - index * 10}%))`
               }}
             >
-              <div className="flex items-center justify-between text-white">
+              <div className="flex items-center justify-between text-foreground">
                 <div>
-                  <p className="font-semibold">{stage.name}</p>
-                  <p className="text-sm opacity-90">{stage.count} leads • {stage.value}</p>
+                  <p className="font-semibold transition-transform duration-300 group-hover:translate-x-1">{stage.name}</p>
+                  <p className="text-sm opacity-75 transition-opacity duration-300 group-hover:opacity-100">{stage.count} leads • {stage.value}</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-lg">{stage.percentage}%</p>
+                  <p className="font-bold text-lg transition-transform duration-300 group-hover:scale-110">{stage.percentage}%</p>
                 </div>
               </div>
             </div>
             {index < stages.length - 1 && (
               <div className="flex justify-center my-1">
-                <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                <ChevronDown className="w-5 h-5 text-muted-foreground animate-pulse" />
               </div>
             )}
           </div>
