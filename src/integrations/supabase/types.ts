@@ -14,7 +14,277 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      appointments: {
+        Row: {
+          closer_id: string | null
+          created_at: string
+          id: string
+          lead_id: string
+          notes: string | null
+          scheduled_at: string
+          setter_id: string | null
+          status: Database["public"]["Enums"]["appointment_status"]
+          updated_at: string
+        }
+        Insert: {
+          closer_id?: string | null
+          created_at?: string
+          id?: string
+          lead_id: string
+          notes?: string | null
+          scheduled_at: string
+          setter_id?: string | null
+          status?: Database["public"]["Enums"]["appointment_status"]
+          updated_at?: string
+        }
+        Update: {
+          closer_id?: string | null
+          created_at?: string
+          id?: string
+          lead_id?: string
+          notes?: string | null
+          scheduled_at?: string
+          setter_id?: string | null
+          status?: Database["public"]["Enums"]["appointment_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointments_closer_id_fkey"
+            columns: ["closer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_setter_id_fkey"
+            columns: ["setter_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      calls: {
+        Row: {
+          appointment_id: string | null
+          caller_id: string | null
+          created_at: string
+          duration_minutes: number | null
+          id: string
+          lead_id: string
+          notes: string | null
+          was_live: boolean | null
+        }
+        Insert: {
+          appointment_id?: string | null
+          caller_id?: string | null
+          created_at?: string
+          duration_minutes?: number | null
+          id?: string
+          lead_id: string
+          notes?: string | null
+          was_live?: boolean | null
+        }
+        Update: {
+          appointment_id?: string | null
+          caller_id?: string | null
+          created_at?: string
+          duration_minutes?: number | null
+          id?: string
+          lead_id?: string
+          notes?: string | null
+          was_live?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calls_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calls_caller_id_fkey"
+            columns: ["caller_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calls_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      deals: {
+        Row: {
+          appointment_id: string | null
+          cash_collected: number | null
+          closed_at: string | null
+          closer_id: string
+          created_at: string
+          fees_amount: number | null
+          id: string
+          lead_id: string
+          revenue_amount: number
+          setter_id: string | null
+          status: Database["public"]["Enums"]["deal_status"]
+          updated_at: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          cash_collected?: number | null
+          closed_at?: string | null
+          closer_id: string
+          created_at?: string
+          fees_amount?: number | null
+          id?: string
+          lead_id: string
+          revenue_amount: number
+          setter_id?: string | null
+          status?: Database["public"]["Enums"]["deal_status"]
+          updated_at?: string
+        }
+        Update: {
+          appointment_id?: string | null
+          cash_collected?: number | null
+          closed_at?: string | null
+          closer_id?: string
+          created_at?: string
+          fees_amount?: number | null
+          id?: string
+          lead_id?: string
+          revenue_amount?: number
+          setter_id?: string | null
+          status?: Database["public"]["Enums"]["deal_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deals_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_closer_id_fkey"
+            columns: ["closer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_setter_id_fkey"
+            columns: ["setter_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leads: {
+        Row: {
+          closer_id: string | null
+          created_at: string
+          email: string
+          id: string
+          name: string
+          notes: string | null
+          phone: string | null
+          setter_id: string | null
+          source: Database["public"]["Enums"]["lead_source"]
+          status: Database["public"]["Enums"]["lead_status"]
+          updated_at: string
+        }
+        Insert: {
+          closer_id?: string | null
+          created_at?: string
+          email: string
+          id?: string
+          name: string
+          notes?: string | null
+          phone?: string | null
+          setter_id?: string | null
+          source?: Database["public"]["Enums"]["lead_source"]
+          status?: Database["public"]["Enums"]["lead_status"]
+          updated_at?: string
+        }
+        Update: {
+          closer_id?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string
+          notes?: string | null
+          phone?: string | null
+          setter_id?: string | null
+          source?: Database["public"]["Enums"]["lead_source"]
+          status?: Database["public"]["Enums"]["lead_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_closer_id_fkey"
+            columns: ["closer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_setter_id_fkey"
+            columns: ["setter_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          email: string
+          full_name: string | null
+          id: string
+          role: Database["public"]["Enums"]["user_role"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          full_name?: string | null
+          id: string
+          role?: Database["public"]["Enums"]["user_role"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          full_name?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["user_role"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +293,26 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      appointment_status:
+        | "scheduled"
+        | "completed"
+        | "no_show"
+        | "cancelled"
+        | "rescheduled"
+      deal_status: "pending" | "won" | "lost"
+      lead_source:
+        | "youtube"
+        | "instagram"
+        | "discord"
+        | "email"
+        | "vendor_doc"
+        | "sms"
+        | "facebook"
+        | "tiktok"
+        | "referral"
+        | "other"
+      lead_status: "new" | "contacted" | "qualified" | "unqualified"
+      user_role: "setter" | "closer" | "admin"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +439,29 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      appointment_status: [
+        "scheduled",
+        "completed",
+        "no_show",
+        "cancelled",
+        "rescheduled",
+      ],
+      deal_status: ["pending", "won", "lost"],
+      lead_source: [
+        "youtube",
+        "instagram",
+        "discord",
+        "email",
+        "vendor_doc",
+        "sms",
+        "facebook",
+        "tiktok",
+        "referral",
+        "other",
+      ],
+      lead_status: ["new", "contacted", "qualified", "unqualified"],
+      user_role: ["setter", "closer", "admin"],
+    },
   },
 } as const

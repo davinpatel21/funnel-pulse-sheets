@@ -1,11 +1,16 @@
-import { MetricCard } from "@/components/MetricCard";
-import { SalesFunnel } from "@/components/SalesFunnel";
+import { useState } from "react";
+import { DashboardFilters } from "@/components/DashboardFilters";
+import { MetricsGrid } from "@/components/MetricsGrid";
+import { ChartsSection } from "@/components/ChartsSection";
 import { GoogleSheetsConnect } from "@/components/GoogleSheetsConnect";
 import { LeadsTable } from "@/components/LeadsTable";
-import { Users, DollarSign, TrendingUp, Target } from "lucide-react";
+import { useDashboardMetrics, type DashboardFilters as Filters } from "@/hooks/useDashboardMetrics";
 import logo from "@/assets/vantage-point-logo.png";
 
 const Index = () => {
+  const [filters, setFilters] = useState<Filters>({});
+  const { data: metrics, isLoading } = useDashboardMetrics(filters);
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -33,54 +38,33 @@ const Index = () => {
 
       {/* Main Content */}
       <main className="container mx-auto px-6 py-8">
+        {/* Filters */}
+        <DashboardFilters filters={filters} onFiltersChange={setFilters} />
+
         {/* Metrics Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <MetricCard
-            title="Total Leads"
-            value="1,000"
-            change="+12.5% from last month"
-            changeType="positive"
-            icon={Users}
-            iconColor="text-primary"
-          />
-          <MetricCard
-            title="Total Revenue"
-            value="$500K"
-            change="+18.2% from last month"
-            changeType="positive"
-            icon={DollarSign}
-            iconColor="text-success"
-          />
-          <MetricCard
-            title="Conversion Rate"
-            value="5%"
-            change="+2.1% from last month"
-            changeType="positive"
-            icon={TrendingUp}
-            iconColor="text-accent"
-          />
-          <MetricCard
-            title="Avg Deal Size"
-            value="$10K"
-            change="+5.3% from last month"
-            changeType="positive"
-            icon={Target}
-            iconColor="text-warning"
-          />
+        <div className="mt-8">
+          {metrics && (
+            <>
+              <MetricsGrid metrics={metrics} isLoading={isLoading} />
+              
+              {/* Charts Section */}
+              <ChartsSection
+                appointmentStatusCounts={metrics.appointmentStatusCounts}
+                leadSourceCounts={metrics.leadSourceCounts}
+              />
+            </>
+          )}
         </div>
 
-        {/* Two Column Layout */}
+        {/* Google Sheets & Database */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="lg:col-span-2">
-            <SalesFunnel />
-          </div>
-          <div>
+          <div className="lg:col-span-1">
             <GoogleSheetsConnect />
           </div>
+          <div className="lg:col-span-2">
+            <LeadsTable />
+          </div>
         </div>
-
-        {/* Leads Table */}
-        <LeadsTable />
       </main>
     </div>
   );
