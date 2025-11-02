@@ -31,6 +31,7 @@ interface Mapping {
   transformation?: string;
   notes?: string;
   sampleValue?: string;
+  customFieldKey?: string;
 }
 
 interface AnalysisResult {
@@ -135,6 +136,12 @@ export function GoogleSheetsImport() {
   const handleMappingChange = (index: number, newDbField: string) => {
     const newMappings = [...mappings];
     newMappings[index] = { ...newMappings[index], dbField: newDbField };
+    setMappings(newMappings);
+  };
+
+  const handleCustomFieldKeyChange = (index: number, customFieldKey: string) => {
+    const newMappings = [...mappings];
+    newMappings[index] = { ...newMappings[index], customFieldKey };
     setMappings(newMappings);
   };
 
@@ -278,14 +285,23 @@ export function GoogleSheetsImport() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="ignore">Ignore</SelectItem>
-                          <SelectItem value="name">Name</SelectItem>
-                          <SelectItem value="email">Email</SelectItem>
+                          <SelectItem value="name">Name *</SelectItem>
+                          <SelectItem value="email">Email *</SelectItem>
                           <SelectItem value="phone">Phone</SelectItem>
                           <SelectItem value="status">Status</SelectItem>
                           <SelectItem value="source">Source</SelectItem>
                           <SelectItem value="notes">Notes</SelectItem>
+                          <SelectItem value="custom_fields">Custom Field</SelectItem>
                         </SelectContent>
                       </Select>
+                      {mapping.dbField === 'custom_fields' && (
+                        <Input
+                          placeholder="Field name (e.g., company_name)"
+                          value={mapping.customFieldKey || ''}
+                          onChange={(e) => handleCustomFieldKeyChange(index, e.target.value)}
+                          className="mt-2"
+                        />
+                      )}
                     </TableCell>
                     <TableCell>{getConfidenceBadge(mapping.confidence)}</TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">

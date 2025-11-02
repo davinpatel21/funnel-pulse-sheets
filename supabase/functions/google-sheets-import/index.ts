@@ -117,6 +117,31 @@ function parseCsv(csvText: string): any[] {
   return rows;
 }
 
+function mapToSourceEnum(value: string): string {
+  if (!value) return 'other';
+  const normalized = value.toLowerCase().trim();
+  
+  if (normalized.includes('website') || normalized.includes('web') || normalized.includes('site')) return 'website';
+  if (normalized.includes('referral') || normalized.includes('refer')) return 'referral';
+  if (normalized.includes('social') || normalized.includes('facebook') || normalized.includes('instagram') || 
+      normalized.includes('twitter') || normalized.includes('linkedin') || normalized.includes('tiktok')) return 'social_media';
+  if (normalized.includes('ad') || normalized.includes('paid') || normalized.includes('ppc') || 
+      normalized.includes('google ads') || normalized.includes('facebook ads')) return 'paid_ad';
+  
+  return 'other';
+}
+
+function mapToStatusEnum(value: string): string {
+  if (!value) return 'new';
+  const normalized = value.toLowerCase().trim();
+  
+  if (normalized.includes('qualified') || normalized === 'qual') return 'qualified';
+  if (normalized.includes('unqualified') || normalized.includes('no show') || normalized === 'no-show') return 'unqualified';
+  if (normalized.includes('contact')) return 'contacted';
+  
+  return 'new';
+}
+
 async function analyzeSheet(req: Request, supabase: any, userId: string) {
   const { sheetUrl } = await req.json();
 
@@ -145,6 +170,7 @@ Available database fields for Leads:
 - status (enum, optional): new, contacted, qualified, unqualified
 - source (enum, optional): website, referral, social_media, paid_ad, other
 - notes (string, optional): Additional notes
+- custom_fields (jsonb, optional): Store any additional fields here as key-value pairs. For columns that don't match standard fields, map them to "custom_fields"
 
 Instructions:
 1. Match each Google Sheets column to the most appropriate database field
@@ -159,7 +185,8 @@ Return format:
   "mappings": [
     {
       "sheetColumn": "column name from sheet",
-      "dbField": "database field name or null",
+      "dbField": "database field name or null or custom_fields",
+      "customFieldKey": "field_key_name (only if dbField is custom_fields)",
       "confidence": 95,
       "transformation": "trim|lowercase_trim|clean_phone|map_to_enum|none",
       "notes": "explanation if needed"
@@ -260,6 +287,7 @@ async function executeImport(req: Request, supabase: any, userId: string) {
     
     try {
       const lead: any = {};
+      const customFields: Record<string, any> = {};
 
       // Apply mappings
       for (const mapping of mappings) {
@@ -279,10 +307,28 @@ async function executeImport(req: Request, supabase: any, userId: string) {
             case 'clean_phone':
               value = value.replace(/[^\d+]/g, '');
               break;
+            case 'map_to_enum':
+              if (mapping.dbField === 'source') {
+                value = mapToSourceEnum(value);
+              } else if (mapping.dbField === 'status') {
+                value = mapToStatusEnum(value);
+              }
+              break;
           }
         }
 
-        lead[mapping.dbField] = value || null;
+        // Route to standard field or custom fields
+        if (mapping.dbField === 'custom_fields') {
+          const fieldKey = mapping.customFieldKey || mapping.sheetColumn.toLowerCase().replace(/\s+/g, '_');
+          customFields[fieldKey] = value || null;
+        } else {
+          lead[mapping.dbField] = value || null;
+        }
+      }
+
+      // Add custom fields to lead object if any exist
+      if (Object.keys(customFields).length > 0) {
+        lead.custom_fields = customFields;
       }
 
       // Apply defaults

@@ -319,6 +319,7 @@ export type Database = {
         Row: {
           closer_id: string | null
           created_at: string
+          custom_fields: Json | null
           email: string
           id: string
           name: string
@@ -332,6 +333,7 @@ export type Database = {
         Insert: {
           closer_id?: string | null
           created_at?: string
+          custom_fields?: Json | null
           email: string
           id?: string
           name: string
@@ -345,6 +347,7 @@ export type Database = {
         Update: {
           closer_id?: string | null
           created_at?: string
+          custom_fields?: Json | null
           email?: string
           id?: string
           name?: string

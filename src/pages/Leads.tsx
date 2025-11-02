@@ -232,6 +232,7 @@ export default function Leads() {
               <TableHead>Closer</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Source</TableHead>
+              <TableHead>Custom Fields</TableHead>
               <TableHead>Created</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -239,11 +240,11 @@ export default function Leads() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center">Loading...</TableCell>
+                <TableCell colSpan={10} className="text-center">Loading...</TableCell>
               </TableRow>
             ) : leads?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center">No leads found</TableCell>
+                <TableCell colSpan={10} className="text-center">No leads found</TableCell>
               </TableRow>
             ) : (
               leads?.map((lead) => (
@@ -258,6 +259,22 @@ export default function Leads() {
                   </TableCell>
                   <TableCell>
                     <span className="capitalize">{lead.source?.replace("_", " ")}</span>
+                  </TableCell>
+                  <TableCell>
+                    {lead.custom_fields && Object.keys(lead.custom_fields).length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {Object.entries(lead.custom_fields).slice(0, 2).map(([key, value]) => (
+                          <span key={key} className="text-xs bg-muted px-2 py-1 rounded">
+                            {key}: {String(value)}
+                          </span>
+                        ))}
+                        {Object.keys(lead.custom_fields).length > 2 && (
+                          <span className="text-xs text-muted-foreground">+{Object.keys(lead.custom_fields).length - 2} more</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell>{new Date(lead.created_at).toLocaleDateString()}</TableCell>
                   <TableCell className="text-right">
