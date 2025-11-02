@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 
 interface Mapping {
   sheetColumn: string;
@@ -51,7 +50,21 @@ export function GoogleSheetsImport() {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [mappings, setMappings] = useState<Mapping[]>([]);
   const [importResult, setImportResult] = useState<any>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const { toast } = useToast();
+
+  // Check authentication status
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsLoggedIn(!!session);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+      setIsLoggedIn(!!session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const analyzeMutation = useMutation({
     mutationFn: async (url: string) => {
@@ -141,6 +154,34 @@ export function GoogleSheetsImport() {
     setMappings([]);
     setImportResult(null);
   };
+
+  // Show login required message if not authenticated
+  if (!isLoggedIn) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileSpreadsheet className="h-5 w-5" />
+            Import from Google Sheets
+          </CardTitle>
+          <CardDescription>
+            Authentication required to import data.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="bg-yellow-50 border border-yellow-200 rounded p-4 flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-yellow-900">Please log in to use this feature</p>
+              <p className="text-sm text-yellow-700 mt-1">
+                You need to be authenticated to import leads from Google Sheets. This feature requires a user account to track imports and associate leads with your profile.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (importResult) {
     return (
