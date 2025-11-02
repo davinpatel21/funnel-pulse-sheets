@@ -97,14 +97,16 @@ export default function Appointments() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const setterId = formData.get("setter_id") as string;
+    const closerId = formData.get("closer_id") as string;
     const appointment = {
       id: editingAppointment?.id,
       lead_id: formData.get("lead_id") as string,
       scheduled_at: formData.get("scheduled_at") as string,
       status: formData.get("status") as string,
       notes: formData.get("notes") as string,
-      setter_id: formData.get("setter_id") as string || null,
-      closer_id: formData.get("closer_id") as string || null,
+      setter_id: setterId === "none" ? null : setterId,
+      closer_id: closerId === "none" ? null : closerId,
     };
     saveMutation.mutate(appointment);
   };
@@ -166,12 +168,12 @@ export default function Appointments() {
               </div>
               <div>
                 <Label htmlFor="setter_id">Setter</Label>
-                <Select name="setter_id" defaultValue={editingAppointment?.setter_id}>
+                <Select name="setter_id" defaultValue={editingAppointment?.setter_id || "none"}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a setter (optional)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
                     {profiles?.filter(p => p.role === "setter").map((profile) => (
                       <SelectItem key={profile.id} value={profile.id}>
                         {profile.full_name || profile.id}
@@ -182,12 +184,12 @@ export default function Appointments() {
               </div>
               <div>
                 <Label htmlFor="closer_id">Closer</Label>
-                <Select name="closer_id" defaultValue={editingAppointment?.closer_id}>
+                <Select name="closer_id" defaultValue={editingAppointment?.closer_id || "none"}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a closer (optional)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
                     {profiles?.filter(p => p.role === "closer").map((profile) => (
                       <SelectItem key={profile.id} value={profile.id}>
                         {profile.full_name || profile.id}

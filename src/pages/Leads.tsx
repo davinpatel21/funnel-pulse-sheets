@@ -92,6 +92,8 @@ export default function Leads() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const setterId = formData.get("setter_id") as string;
+    const closerId = formData.get("closer_id") as string;
     const lead = {
       id: editingLead?.id,
       name: formData.get("name") as string,
@@ -100,8 +102,8 @@ export default function Leads() {
       status: formData.get("status") as string,
       source: formData.get("source") as string,
       notes: formData.get("notes") as string,
-      setter_id: formData.get("setter_id") as string || null,
-      closer_id: formData.get("closer_id") as string || null,
+      setter_id: setterId === "none" ? null : setterId,
+      closer_id: closerId === "none" ? null : closerId,
     };
     saveMutation.mutate(lead);
   };
@@ -165,12 +167,12 @@ export default function Leads() {
               </div>
               <div>
                 <Label htmlFor="setter_id">Setter</Label>
-                <Select name="setter_id" defaultValue={editingLead?.setter_id}>
+                <Select name="setter_id" defaultValue={editingLead?.setter_id || "none"}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a setter (optional)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
                     {profiles?.filter(p => p.role === "setter").map((profile) => (
                       <SelectItem key={profile.id} value={profile.id}>
                         {profile.full_name || profile.id}
@@ -181,12 +183,12 @@ export default function Leads() {
               </div>
               <div>
                 <Label htmlFor="closer_id">Closer</Label>
-                <Select name="closer_id" defaultValue={editingLead?.closer_id}>
+                <Select name="closer_id" defaultValue={editingLead?.closer_id || "none"}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a closer (optional)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
                     {profiles?.filter(p => p.role === "closer").map((profile) => (
                       <SelectItem key={profile.id} value={profile.id}>
                         {profile.full_name || profile.id}

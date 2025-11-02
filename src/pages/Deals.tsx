@@ -97,6 +97,7 @@ export default function Deals() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const setterId = formData.get("setter_id") as string;
     const deal = {
       id: editingDeal?.id,
       lead_id: formData.get("lead_id") as string,
@@ -105,7 +106,7 @@ export default function Deals() {
       fees_amount: parseFloat(formData.get("fees_amount") as string) || 0,
       status: formData.get("status") as string,
       closed_at: formData.get("status") === "won" ? new Date().toISOString() : null,
-      setter_id: formData.get("setter_id") as string || null,
+      setter_id: setterId === "none" ? null : setterId,
       closer_id: formData.get("closer_id") as string,
     };
     saveMutation.mutate(deal);
@@ -178,12 +179,12 @@ export default function Deals() {
               </div>
               <div>
                 <Label htmlFor="setter_id">Setter</Label>
-                <Select name="setter_id" defaultValue={editingDeal?.setter_id}>
+                <Select name="setter_id" defaultValue={editingDeal?.setter_id || "none"}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a setter (optional)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
                     {profiles?.filter(p => p.role === "setter").map((profile) => (
                       <SelectItem key={profile.id} value={profile.id}>
                         {profile.full_name || profile.id}
