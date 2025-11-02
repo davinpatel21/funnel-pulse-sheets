@@ -13,9 +13,29 @@ serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      throw new Error('Missing authorization header');
+    const authHeader = req.headers.get('Authorization') || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    
+    if (!token) {
+      return new Response(JSON.stringify({ error: 'Missing or invalid Authorization header' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    let userId: string | null = null;
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1] || ''));
+      userId = payload?.sub || null;
+    } catch (_e) {
+      // Token decode failed
+    }
+
+    if (!userId) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -24,18 +44,13 @@ serve(async (req) => {
       global: { headers: { Authorization: authHeader } }
     });
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      throw new Error('Unauthorized');
-    }
-
     const url = new URL(req.url);
     const action = url.searchParams.get('action');
 
     if (action === 'analyze') {
-      return await analyzeSheet(req, supabase, user.id);
+      return await analyzeSheet(req, supabase, userId);
     } else if (action === 'import') {
-      return await executeImport(req, supabase, user.id);
+      return await executeImport(req, supabase, userId);
     } else {
       throw new Error('Invalid action parameter');
     }
@@ -244,9 +259,7 @@ async function executeImport(req: Request, supabase: any, userId: string) {
     const row = dataRows[i];
     
     try {
-      const lead: any = {
-        user_id: userId,
-      };
+      const lead: any = {};
 
       // Apply mappings
       for (const mapping of mappings) {
