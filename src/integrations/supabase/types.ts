@@ -429,6 +429,27 @@ export type Database = {
         }
         Relationships: []
       }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       webhook_configs: {
         Row: {
           created_at: string
@@ -464,10 +485,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       api_key_status: "active" | "revoked"
+      app_role: "admin" | "setter" | "closer"
       appointment_status:
         | "scheduled"
         | "completed"
@@ -623,6 +651,7 @@ export const Constants = {
   public: {
     Enums: {
       api_key_status: ["active", "revoked"],
+      app_role: ["admin", "setter", "closer"],
       appointment_status: [
         "scheduled",
         "completed",
