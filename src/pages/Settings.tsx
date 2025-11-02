@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Copy, Plus, Trash2, Key } from "lucide-react";
+import { GoogleSheetsImport } from "@/components/GoogleSheetsImport";
 import {
   Dialog,
   DialogContent,
@@ -120,6 +121,8 @@ export default function Settings() {
   return (
     <div className="p-8 space-y-6">
       <h1 className="text-3xl font-bold">Settings</h1>
+
+      <GoogleSheetsImport />
 
       <Card>
         <CardHeader>

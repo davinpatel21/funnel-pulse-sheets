@@ -267,6 +267,54 @@ export type Database = {
           },
         ]
       }
+      google_sheets_imports: {
+        Row: {
+          created_at: string | null
+          errors: Json | null
+          field_mappings: Json
+          id: string
+          last_sync_at: string | null
+          rows_failed: number | null
+          rows_imported: number | null
+          sheet_id: string
+          sheet_name: string | null
+          sheet_url: string
+          sync_status: Database["public"]["Enums"]["import_status"] | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          errors?: Json | null
+          field_mappings: Json
+          id?: string
+          last_sync_at?: string | null
+          rows_failed?: number | null
+          rows_imported?: number | null
+          sheet_id: string
+          sheet_name?: string | null
+          sheet_url: string
+          sync_status?: Database["public"]["Enums"]["import_status"] | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          errors?: Json | null
+          field_mappings?: Json
+          id?: string
+          last_sync_at?: string | null
+          rows_failed?: number | null
+          rows_imported?: number | null
+          sheet_id?: string
+          sheet_name?: string | null
+          sheet_url?: string
+          sync_status?: Database["public"]["Enums"]["import_status"] | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       leads: {
         Row: {
           closer_id: string | null
@@ -427,6 +475,13 @@ export type Database = {
         | "cancelled"
         | "rescheduled"
       deal_status: "pending" | "won" | "lost"
+      import_status:
+        | "pending"
+        | "analyzing"
+        | "ready"
+        | "importing"
+        | "completed"
+        | "failed"
       lead_source:
         | "youtube"
         | "instagram"
@@ -576,6 +631,14 @@ export const Constants = {
         "rescheduled",
       ],
       deal_status: ["pending", "won", "lost"],
+      import_status: [
+        "pending",
+        "analyzing",
+        "ready",
+        "importing",
+        "completed",
+        "failed",
+      ],
       lead_source: [
         "youtube",
         "instagram",
