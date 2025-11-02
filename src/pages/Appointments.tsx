@@ -1,0 +1,224 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Plus, Search, Trash2, Edit } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+export default function Appointments() {
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingAppointment, setEditingAppointment] = useState<any>(null);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: appointments, isLoading } = useQuery({
+    queryKey: ["appointments"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("appointments")
+        .select("*, leads(name, email)")
+        .order("scheduled_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: leads } = useQuery({
+    queryKey: ["leads-list"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("leads").select("id, name, email");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("appointments").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      toast({ title: "Appointment deleted" });
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async (appointment: any) => {
+      if (appointment.id) {
+        const { error } = await supabase.from("appointments").update(appointment).eq("id", appointment.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("appointments").insert([appointment]);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      setIsDialogOpen(false);
+      setEditingAppointment(null);
+      toast({ title: editingAppointment ? "Appointment updated" : "Appointment created" });
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const appointment = {
+      id: editingAppointment?.id,
+      lead_id: formData.get("lead_id") as string,
+      scheduled_at: formData.get("scheduled_at") as string,
+      status: formData.get("status") as string,
+      notes: formData.get("notes") as string,
+    };
+    saveMutation.mutate(appointment);
+  };
+
+  return (
+    <div className="p-8">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Appointments</h1>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button onClick={() => setEditingAppointment(null)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Appointment
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{editingAppointment ? "Edit Appointment" : "Add New Appointment"}</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <Label htmlFor="lead_id">Lead</Label>
+                <Select name="lead_id" defaultValue={editingAppointment?.lead_id} required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a lead" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {leads?.map((lead) => (
+                      <SelectItem key={lead.id} value={lead.id}>
+                        {lead.name} - {lead.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="scheduled_at">Scheduled Date & Time</Label>
+                <Input
+                  id="scheduled_at"
+                  name="scheduled_at"
+                  type="datetime-local"
+                  defaultValue={editingAppointment?.scheduled_at?.slice(0, 16)}
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="status">Status</Label>
+                <Select name="status" defaultValue={editingAppointment?.status || "scheduled"}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="scheduled">Scheduled</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="no_show">No Show</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="notes">Notes</Label>
+                <Input id="notes" name="notes" defaultValue={editingAppointment?.notes} />
+              </div>
+              <Button type="submit" className="w-full">
+                {editingAppointment ? "Update" : "Create"} Appointment
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="border rounded-lg">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Lead</TableHead>
+              <TableHead>Scheduled</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Notes</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center">Loading...</TableCell>
+              </TableRow>
+            ) : appointments?.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center">No appointments found</TableCell>
+              </TableRow>
+            ) : (
+              appointments?.map((appointment) => (
+                <TableRow key={appointment.id}>
+                  <TableCell className="font-medium">{appointment.leads?.name}</TableCell>
+                  <TableCell>{new Date(appointment.scheduled_at).toLocaleString()}</TableCell>
+                  <TableCell>
+                    <span className="capitalize">{appointment.status.replace("_", " ")}</span>
+                  </TableCell>
+                  <TableCell>{appointment.notes}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setEditingAppointment(appointment);
+                        setIsDialogOpen(true);
+                      }}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => deleteMutation.mutate(appointment.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}

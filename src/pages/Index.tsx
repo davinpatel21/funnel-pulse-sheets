@@ -2,7 +2,6 @@ import { useState } from "react";
 import { DashboardFilters } from "@/components/DashboardFilters";
 import { MetricsGrid } from "@/components/MetricsGrid";
 import { ChartsSection } from "@/components/ChartsSection";
-import { GoogleSheetsConnect } from "@/components/GoogleSheetsConnect";
 import { LeadsTable } from "@/components/LeadsTable";
 import { useDashboardMetrics, type DashboardFilters as Filters } from "@/hooks/useDashboardMetrics";
 import logo from "@/assets/vantage-point-logo.png";
@@ -56,14 +55,9 @@ const Index = () => {
           )}
         </div>
 
-        {/* Google Sheets & Database */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="lg:col-span-1">
-            <GoogleSheetsConnect />
-          </div>
-          <div className="lg:col-span-2">
-            <LeadsTable />
-          </div>
+        {/* Recent Leads */}
+        <div className="mb-8">
+          <LeadsTable />
         </div>
       </main>
     </div>
