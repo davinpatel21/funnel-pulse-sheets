@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Calendar, Phone, DollarSign, Settings } from "lucide-react";
+import { LayoutDashboard, Users, Calendar, Phone, DollarSign, UsersRound, Settings } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import {
   Sidebar,
@@ -17,6 +17,7 @@ const navigation = [
   { title: "Appointments", url: "/appointments", icon: Calendar },
   { title: "Calls", url: "/calls", icon: Phone },
   { title: "Deals", url: "/deals", icon: DollarSign },
+  { title: "Team", url: "/team", icon: UsersRound },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 

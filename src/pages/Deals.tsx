@@ -56,6 +56,15 @@ export default function Deals() {
     },
   });
 
+  const { data: profiles } = useQuery({
+    queryKey: ["profiles-list"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("profiles").select("id, full_name, role").in("role", ["setter", "closer"]);
+      if (error) throw error;
+      return data;
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from("deals").delete().eq("id", id);
@@ -95,7 +104,9 @@ export default function Deals() {
       cash_collected: parseFloat(formData.get("cash_collected") as string) || 0,
       fees_amount: parseFloat(formData.get("fees_amount") as string) || 0,
       status: formData.get("status") as string,
-      closed_at: formData.get("status") === "closed_won" ? new Date().toISOString() : null,
+      closed_at: formData.get("status") === "won" ? new Date().toISOString() : null,
+      setter_id: formData.get("setter_id") as string || null,
+      closer_id: formData.get("closer_id") as string,
     };
     saveMutation.mutate(deal);
   };
@@ -166,6 +177,37 @@ export default function Deals() {
                 />
               </div>
               <div>
+                <Label htmlFor="setter_id">Setter</Label>
+                <Select name="setter_id" defaultValue={editingDeal?.setter_id}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a setter (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {profiles?.filter(p => p.role === "setter").map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        {profile.full_name || profile.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="closer_id">Closer (Required)</Label>
+                <Select name="closer_id" defaultValue={editingDeal?.closer_id} required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a closer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {profiles?.filter(p => p.role === "closer").map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        {profile.full_name || profile.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
                 <Label htmlFor="status">Status</Label>
                 <Select name="status" defaultValue={editingDeal?.status || "pending"}>
                   <SelectTrigger>
@@ -173,8 +215,8 @@ export default function Deals() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="closed_won">Closed Won</SelectItem>
-                    <SelectItem value="closed_lost">Closed Lost</SelectItem>
+                    <SelectItem value="won">Won</SelectItem>
+                    <SelectItem value="lost">Lost</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

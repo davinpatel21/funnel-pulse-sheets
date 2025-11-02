@@ -39,13 +39,22 @@ export default function Leads() {
   const { data: leads, isLoading } = useQuery({
     queryKey: ["leads", searchTerm],
     queryFn: async () => {
-      let query = supabase.from("leads").select("*").order("created_at", { ascending: false });
+      let query = supabase.from("leads").select("*, setter:profiles!leads_setter_id_fkey(full_name), closer:profiles!leads_closer_id_fkey(full_name)").order("created_at", { ascending: false });
       
       if (searchTerm) {
         query = query.or(`name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`);
       }
       
       const { data, error } = await query;
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: profiles } = useQuery({
+    queryKey: ["profiles-list"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("profiles").select("id, full_name, role").in("role", ["setter", "closer"]);
       if (error) throw error;
       return data;
     },
@@ -91,6 +100,8 @@ export default function Leads() {
       status: formData.get("status") as string,
       source: formData.get("source") as string,
       notes: formData.get("notes") as string,
+      setter_id: formData.get("setter_id") as string || null,
+      closer_id: formData.get("closer_id") as string || null,
     };
     saveMutation.mutate(lead);
   };
@@ -153,6 +164,38 @@ export default function Leads() {
                 </Select>
               </div>
               <div>
+                <Label htmlFor="setter_id">Setter</Label>
+                <Select name="setter_id" defaultValue={editingLead?.setter_id}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a setter (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {profiles?.filter(p => p.role === "setter").map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        {profile.full_name || profile.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="closer_id">Closer</Label>
+                <Select name="closer_id" defaultValue={editingLead?.closer_id}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a closer (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {profiles?.filter(p => p.role === "closer").map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        {profile.full_name || profile.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
                 <Label htmlFor="notes">Notes</Label>
                 <Input id="notes" name="notes" defaultValue={editingLead?.notes} />
               </div>
@@ -183,6 +226,8 @@ export default function Leads() {
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Phone</TableHead>
+              <TableHead>Setter</TableHead>
+              <TableHead>Closer</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Source</TableHead>
               <TableHead>Created</TableHead>
@@ -192,11 +237,11 @@ export default function Leads() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center">Loading...</TableCell>
+                <TableCell colSpan={9} className="text-center">Loading...</TableCell>
               </TableRow>
             ) : leads?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center">No leads found</TableCell>
+                <TableCell colSpan={9} className="text-center">No leads found</TableCell>
               </TableRow>
             ) : (
               leads?.map((lead) => (
@@ -204,6 +249,8 @@ export default function Leads() {
                   <TableCell className="font-medium">{lead.name}</TableCell>
                   <TableCell>{lead.email}</TableCell>
                   <TableCell>{lead.phone}</TableCell>
+                  <TableCell>{lead.setter?.full_name || "—"}</TableCell>
+                  <TableCell>{lead.closer?.full_name || "—"}</TableCell>
                   <TableCell>
                     <span className="capitalize">{lead.status}</span>
                   </TableCell>

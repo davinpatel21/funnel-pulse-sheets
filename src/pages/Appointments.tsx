@@ -56,6 +56,15 @@ export default function Appointments() {
     },
   });
 
+  const { data: profiles } = useQuery({
+    queryKey: ["profiles-list"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("profiles").select("id, full_name, role").in("role", ["setter", "closer"]);
+      if (error) throw error;
+      return data;
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from("appointments").delete().eq("id", id);
@@ -94,6 +103,8 @@ export default function Appointments() {
       scheduled_at: formData.get("scheduled_at") as string,
       status: formData.get("status") as string,
       notes: formData.get("notes") as string,
+      setter_id: formData.get("setter_id") as string || null,
+      closer_id: formData.get("closer_id") as string || null,
     };
     saveMutation.mutate(appointment);
   };
@@ -150,6 +161,38 @@ export default function Appointments() {
                     <SelectItem value="completed">Completed</SelectItem>
                     <SelectItem value="no_show">No Show</SelectItem>
                     <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="setter_id">Setter</Label>
+                <Select name="setter_id" defaultValue={editingAppointment?.setter_id}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a setter (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {profiles?.filter(p => p.role === "setter").map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        {profile.full_name || profile.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="closer_id">Closer</Label>
+                <Select name="closer_id" defaultValue={editingAppointment?.closer_id}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a closer (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {profiles?.filter(p => p.role === "closer").map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        {profile.full_name || profile.id}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

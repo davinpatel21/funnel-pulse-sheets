@@ -10,6 +10,7 @@ import Leads from "./pages/Leads";
 import Appointments from "./pages/Appointments";
 import Calls from "./pages/Calls";
 import Deals from "./pages/Deals";
+import Team from "./pages/Team";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
@@ -31,10 +32,11 @@ const App = () => (
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/leads" element={<Leads />} />
-                <Route path="/appointments" element={<Appointments />} />
-                <Route path="/calls" element={<Calls />} />
-                <Route path="/deals" element={<Deals />} />
-                <Route path="/settings" element={<Settings />} />
+              <Route path="/appointments" element={<Appointments />} />
+              <Route path="/calls" element={<Calls />} />
+              <Route path="/deals" element={<Deals />} />
+              <Route path="/team" element={<Team />} />
+              <Route path="/settings" element={<Settings />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
