@@ -166,7 +166,9 @@ async function analyzeSheet(req: Request, supabase: any, userId: string) {
 STEP 1: DETECT SHEET TYPE
 Analyze the column headers to determine what type of data this sheet contains:
 
-- APPOINTMENTS: Look for "Booking Time", "Scheduled", "Appointment Date", "Calendar", "Meeting Time", "Calendly"
+- APPOINTMENTS: Look for "Booking Time", "Scheduled", "Appointment Date", "Calendar", "Meeting Time", "Calendly", "Scheduled For"
+  * STATUS DETECTION: Look for columns like "Financially Qualified?", "Status", "Show Status", "Appointment Status", "Result"
+  * Common no-show indicators: "No Show", "DNS", "Did Not Show", "Cancelled"
 - DEALS: Look for "Revenue", "Amount", "Price", "Cash Collected", "Deal Value", "Won/Lost", "Sale", "Closed"
 - CALLS: Look for "Call Duration", "Call Time", "Live/Voicemail", "Minutes", "Phone Call", "Was Live"
 - LEADS: Look for "Name", "Email", "Phone", "Source", "Lead Source" (default if unclear)

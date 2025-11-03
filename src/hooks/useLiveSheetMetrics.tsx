@@ -96,8 +96,33 @@ function calculateMetrics(leads: any[], appointments: any[], deals: any[], calls
     : 0;
 
   const totalCallsBooked = appointments.length;
-  const completedAppts = appointments.filter(a => a.status === 'completed' || a.status === 'no_show').length;
-  const noShows = appointments.filter(a => a.status === 'no_show').length;
+  
+  // Improved status detection - check both top-level status and custom_fields
+  const getStatus = (appt: any) => {
+    if (appt.status) return appt.status.toLowerCase();
+    
+    // Check custom_fields for status indicators
+    if (appt.custom_fields) {
+      const statusField = appt.custom_fields.status || 
+                         appt.custom_fields['financially_qualified'] ||
+                         appt.custom_fields['show_status'] ||
+                         appt.custom_fields['appointment_status'];
+      if (statusField) return statusField.toLowerCase();
+    }
+    
+    return 'scheduled';
+  };
+  
+  const completedAppts = appointments.filter(a => {
+    const status = getStatus(a);
+    return status === 'completed' || status === 'no_show' || status.includes('no show') || status.includes('qualified');
+  }).length;
+  
+  const noShows = appointments.filter(a => {
+    const status = getStatus(a);
+    return status === 'no_show' || status.includes('no show') || status === 'dns' || status === 'did not show';
+  }).length;
+  
   const shows = completedAppts - noShows;
   
   const closeRate = completedAppts > 0 ? (wonDeals.length / completedAppts) * 100 : 0;

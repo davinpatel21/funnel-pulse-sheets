@@ -104,9 +104,38 @@ serve(async (req) => {
         }
       });
 
+      // For appointments sheets, check if status needs to be derived from custom_fields
+      if (config.sheet_type === 'appointments' || config.sheet_type === 'APPOINTMENTS') {
+        // Check various status indicators
+        const statusIndicators = [
+          'Financially Qualified?',
+          'Status',
+          'Show Status',
+          'Appointment Status',
+          'Result'
+        ];
+        
+        for (const indicator of statusIndicators) {
+          const statusValue = row[indicator];
+          if (statusValue) {
+            const normalized = statusValue.toLowerCase().trim();
+            if (normalized.includes('no show') || normalized === 'dns' || normalized === 'did not show') {
+              record.status = 'no_show';
+              break;
+            } else if (normalized.includes('completed') || normalized.includes('show') || normalized.includes('qualified')) {
+              record.status = 'completed';
+              break;
+            } else if (normalized.includes('cancelled')) {
+              record.status = 'cancelled';
+              break;
+            }
+          }
+        }
+      }
+
       // Apply defaults
       if (!record.source) record.source = 'other';
-      if (!record.status) record.status = 'new';
+      if (!record.status) record.status = config.sheet_type === 'appointments' ? 'scheduled' : 'new';
 
       return record;
     });
