@@ -29,7 +29,9 @@ const Index = () => {
             </div>
             <div className="flex items-center gap-3 px-4 py-2 rounded-lg bg-success/10 border border-success/20 transition-all duration-300 hover:scale-105">
               <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-              <span className="text-sm font-medium text-success">Live Tracking</span>
+              <span className="text-sm font-medium text-success">
+                {metrics?.isLiveMode ? 'Live from Google Sheets' : 'Live Tracking'}
+              </span>
             </div>
           </div>
         </div>

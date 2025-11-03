@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileSpreadsheet, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { FileSpreadsheet, Loader2, CheckCircle2, AlertCircle, Radio } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -52,16 +52,19 @@ export function GoogleSheetsImport() {
   const [mappings, setMappings] = useState<Mapping[]>([]);
   const [importResult, setImportResult] = useState<any>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Check authentication status
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsLoggedIn(!!session);
+      setUserId(session?.user?.id || null);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
       setIsLoggedIn(!!session);
+      setUserId(session?.user?.id || null);
     });
 
     return () => subscription.unsubscribe();
@@ -121,6 +124,42 @@ export function GoogleSheetsImport() {
     },
   });
 
+  const connectLiveMutation = useMutation({
+    mutationFn: async () => {
+      if (!analysisResult) throw new Error("No analysis result");
+      if (!userId) throw new Error("User not authenticated");
+
+      const { data, error } = await supabase
+        .from('sheet_configurations')
+        .insert({
+          user_id: userId,
+          sheet_url: sheetUrl,
+          sheet_type: 'leads',
+          mappings: mappings as any,
+          is_active: true,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      toast({
+        title: "Sheet connected!",
+        description: "Your sheet is now connected and will sync automatically every 5 minutes",
+      });
+      reset();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to connect sheet",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleAnalyze = () => {
     if (!sheetUrl) {
       toast({ title: "Please enter a Google Sheets URL", variant: "destructive" });
@@ -131,6 +170,10 @@ export function GoogleSheetsImport() {
 
   const handleImport = () => {
     importMutation.mutate();
+  };
+
+  const handleConnectLive = () => {
+    connectLiveMutation.mutate();
   };
 
   const handleMappingChange = (index: number, newDbField: string) => {
@@ -319,7 +362,8 @@ export function GoogleSheetsImport() {
             </Button>
             <Button 
               onClick={handleImport} 
-              disabled={importMutation.isPending}
+              disabled={importMutation.isPending || connectLiveMutation.isPending}
+              variant="outline"
               className="flex-1"
             >
               {importMutation.isPending ? (
@@ -328,7 +372,21 @@ export function GoogleSheetsImport() {
                   Importing...
                 </>
               ) : (
-                `Import ${analysisResult.totalRows} Leads`
+                `Import Once (${analysisResult.totalRows} rows)`
+              )}
+            </Button>
+            <Button 
+              onClick={handleConnectLive} 
+              disabled={importMutation.isPending || connectLiveMutation.isPending}
+              className="flex-1"
+            >
+              {connectLiveMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                'Connect Live'
               )}
             </Button>
           </div>

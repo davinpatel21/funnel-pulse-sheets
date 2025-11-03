@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useSheetConfigurations } from "./useSheetConfigurations";
+import { useLiveSheetMetrics } from "./useLiveSheetMetrics";
 
 export interface DashboardFilters {
   setterId?: string;
@@ -10,7 +12,14 @@ export interface DashboardFilters {
 }
 
 export const useDashboardMetrics = (filters: DashboardFilters = {}) => {
-  return useQuery({
+  const { data: configs, isLoading: configsLoading } = useSheetConfigurations();
+  const mode = configs && configs.length > 0 ? 'live' : 'database';
+  
+  // Live mode - fetch from Google Sheets
+  const liveMetrics = useLiveSheetMetrics(configs || [], filters);
+  
+  // Database mode - fetch from Supabase
+  const databaseMetrics = useQuery({
     queryKey: ["dashboardMetrics", filters],
     queryFn: async () => {
       // Build filter conditions
@@ -143,5 +152,21 @@ export const useDashboardMetrics = (filters: DashboardFilters = {}) => {
         leadSourceCounts,
       };
     },
+    enabled: mode === 'database',
   });
+
+  // Return live or database metrics based on mode
+  if (mode === 'live') {
+    return {
+      data: liveMetrics.data ? { ...liveMetrics.data, isLiveMode: true } : undefined,
+      isLoading: liveMetrics.isLoading,
+      error: liveMetrics.error,
+    } as any;
+  }
+  
+  return {
+    data: databaseMetrics.data ? { ...databaseMetrics.data, isLiveMode: false } : undefined,
+    isLoading: databaseMetrics.isLoading,
+    error: databaseMetrics.error,
+  } as any;
 };

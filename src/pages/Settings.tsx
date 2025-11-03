@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Copy, Plus, Trash2, Key } from "lucide-react";
 import { GoogleSheetsImport } from "@/components/GoogleSheetsImport";
+import { ConnectedSheets } from "@/components/ConnectedSheets";
 import {
   Dialog,
   DialogContent,
@@ -123,6 +124,7 @@ export default function Settings() {
       <h1 className="text-3xl font-bold">Settings</h1>
 
       <GoogleSheetsImport />
+      <ConnectedSheets />
 
       <Card>
         <CardHeader>
