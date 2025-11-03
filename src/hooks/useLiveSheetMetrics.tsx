@@ -26,6 +26,12 @@ export function useLiveSheetMetrics(configs: any[], filters: DashboardFilters = 
           
           if (error) {
             console.error(`Error fetching sheet ${config.id}:`, error);
+            console.error('Error details:', JSON.stringify(error, null, 2));
+            return { sheet_type: config.sheet_type, data: [], error: error.message || 'Unknown error' };
+          }
+          
+          if (!data) {
+            console.warn(`No data returned for sheet ${config.id}`);
             return { sheet_type: config.sheet_type, data: [] };
           }
           

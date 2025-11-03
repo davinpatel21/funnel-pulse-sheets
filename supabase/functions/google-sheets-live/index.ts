@@ -52,11 +52,17 @@ serve(async (req) => {
     const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
     const csvResponse = await fetch(csvUrl);
     if (!csvResponse.ok) {
-      throw new Error('Failed to fetch sheet data');
+      throw new Error('Failed to fetch sheet data. Make sure the sheet is publicly accessible.');
     }
 
     const csvText = await csvResponse.text();
+    console.log(`Fetched CSV from sheet ${sheetId}, length: ${csvText.length} chars`);
+    
     const rows = parseCsv(csvText);
+    console.log(`Parsed ${rows.length} rows from CSV`);
+    if (rows.length > 0) {
+      console.log('First row sample:', JSON.stringify(rows[0]));
+    }
 
     // Apply mappings to transform data
     const transformedData = rows.map(row => {
@@ -105,6 +111,22 @@ serve(async (req) => {
       return record;
     });
 
+    console.log(`Transformed ${transformedData.length} records`);
+    if (transformedData.length > 0) {
+      console.log('First transformed record:', JSON.stringify(transformedData[0]));
+    }
+
+    // Validate transformed data
+    const validRecords = transformedData.filter(record => {
+      if (!record.name || !record.email) {
+        console.warn('Skipping invalid record (missing name or email):', JSON.stringify(record));
+        return false;
+      }
+      return true;
+    });
+
+    console.log(`Validation: ${validRecords.length}/${transformedData.length} records valid`);
+
     // Update last_synced_at
     await supabase
       .from('sheet_configurations')
@@ -113,9 +135,9 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({ 
-        data: transformedData,
+        data: validRecords,
         sheet_type: config.sheet_type,
-        row_count: transformedData.length 
+        row_count: validRecords.length 
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -136,18 +158,48 @@ function extractSheetId(sheetUrl: string): string | null {
 }
 
 function parseCsv(csvText: string): any[] {
-  const lines = csvText.split('\n').filter(line => line.trim());
+  const lines = csvText.split('\n');
   if (lines.length === 0) return [];
 
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+  // RFC 4180-compliant CSV parser
+  const parseRow = (line: string): string[] => {
+    const values: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      const nextChar = line[i + 1];
+      
+      if (char === '"' && inQuotes && nextChar === '"') {
+        current += '"';
+        i++; // Skip next quote
+      } else if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        values.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    values.push(current.trim());
+    return values;
+  };
+
+  const headers = parseRow(lines[0]);
   const rows = [];
 
   for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+    if (!lines[i].trim()) continue; // Skip empty lines
+    
+    const values = parseRow(lines[i]);
     const row: any = {};
+    
     headers.forEach((header, index) => {
       row[header] = values[index] || '';
     });
+    
     rows.push(row);
   }
 

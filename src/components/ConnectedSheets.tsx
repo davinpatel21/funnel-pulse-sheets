@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Radio, Trash2, ExternalLink } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { LiveDataDebugger } from "./LiveDataDebugger";
 
 export function ConnectedSheets() {
   const { data: configs, isLoading } = useSheetConfigurations();
@@ -107,6 +108,8 @@ export function ConnectedSheets() {
               <div className="text-xs text-muted-foreground bg-muted/50 rounded p-2">
                 {(config.mappings as any[]).length} fields mapped
               </div>
+              
+              <LiveDataDebugger configId={config.id} />
             </div>
           ))
         )}

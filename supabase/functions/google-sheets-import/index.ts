@@ -175,10 +175,11 @@ Available database fields for Leads:
 Instructions:
 1. Match each Google Sheets column to the most appropriate database field
 2. Provide a confidence score (0-100) for each mapping
-3. Identify columns that should be ignored (not mapped)
-4. Suggest transformations if needed (trim, lowercase, etc.)
-5. Identify potential data quality issues
-6. Return ONLY valid JSON, no markdown or explanations
+3. CRITICAL: The 'source' field is REQUIRED for dashboard charts. Look for columns like: "Source", "Lead Source", "UTM Source", "Campaign Source", "Traffic Source", "Origin". If found, map to 'source' with 'map_to_enum' transformation. If NO suitable column exists, add a warning.
+4. Identify columns that should be ignored (not mapped)
+5. Suggest transformations if needed (trim, lowercase, etc.)
+6. Identify potential data quality issues
+7. Return ONLY valid JSON, no markdown or explanations
 
 Return format:
 {
