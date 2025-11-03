@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useSheetConfigurations } from "@/hooks/useSheetConfigurations";
 import { Button } from "@/components/ui/button";
 import { Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -35,7 +36,8 @@ export default function Calls() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: calls, isLoading } = useQuery({
+  // Fetch database calls
+  const { data: dbCalls, isLoading: isLoadingDb } = useQuery({
     queryKey: ["calls"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -46,6 +48,41 @@ export default function Calls() {
       return data;
     },
   });
+
+  // Fetch live sheet calls
+  const { data: configs } = useSheetConfigurations();
+  const callsConfig = configs?.find(c => c.sheet_type === 'calls');
+  
+  const { data: liveCalls, isLoading: isLoadingLive } = useQuery({
+    queryKey: ['live-calls', callsConfig?.id],
+    queryFn: async () => {
+      if (!callsConfig) return [];
+      
+      const { data } = await supabase.functions.invoke('google-sheets-live', {
+        body: { configuration_id: callsConfig.id }
+      });
+      
+      // Transform live data to match call structure
+      return (data?.data || []).map((record: any) => ({
+        id: `live-${record.email || record.name}`,
+        lead_id: null,
+        duration_minutes: record.custom_fields?.duration || record.custom_fields?.call_duration,
+        was_live: record.custom_fields?.was_live !== 'voicemail',
+        notes: record.notes || '',
+        caller_id: null,
+        appointment_id: null,
+        created_at: record.custom_fields?.call_time || new Date().toISOString(),
+        leads: { name: record.name, email: record.email },
+        isLive: true
+      }));
+    },
+    enabled: !!callsConfig,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  // Merge database + live calls
+  const calls = [...(dbCalls || []), ...(liveCalls || [])];
+  const isLoading = isLoadingDb || isLoadingLive;
 
   const { data: leads } = useQuery({
     queryKey: ["leads-list"],

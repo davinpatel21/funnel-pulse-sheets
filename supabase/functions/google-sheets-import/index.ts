@@ -161,23 +161,71 @@ async function analyzeSheet(req: Request, supabase: any, userId: string) {
     throw new Error('LOVABLE_API_KEY not configured');
   }
 
-  const systemPrompt = `You are a data mapping expert. Analyze the Google Sheets columns and map them to our database fields.
+  const systemPrompt = `You are a data mapping expert. Analyze this Google Sheet and suggest field mappings for a CRM system.
+    
+STEP 1: DETECT SHEET TYPE
+Analyze the column headers to determine what type of data this sheet contains:
 
-Available database fields for Leads:
-- name (string, required): Full name of the lead
-- email (string, required): Email address
-- phone (string, optional): Phone number
-- status (enum, optional): new, contacted, qualified, unqualified
-- source (enum, optional): website, referral, social_media, paid_ad, other
-- notes (string, optional): Additional notes
-- custom_fields (jsonb, optional): Store any additional fields here as key-value pairs. For columns that don't match standard fields, map them to "custom_fields"
+- APPOINTMENTS: Look for "Booking Time", "Scheduled", "Appointment Date", "Calendar", "Meeting Time", "Calendly"
+- DEALS: Look for "Revenue", "Amount", "Price", "Cash Collected", "Deal Value", "Won/Lost", "Sale", "Closed"
+- CALLS: Look for "Call Duration", "Call Time", "Live/Voicemail", "Minutes", "Phone Call", "Was Live"
+- LEADS: Look for "Name", "Email", "Phone", "Source", "Lead Source" (default if unclear)
 
-Instructions:
-1. Match each Google Sheets column to the most appropriate database field
-2. Provide a confidence score (0-100) for each mapping
-3. CRITICAL: The 'source' field is REQUIRED for dashboard charts. Look for columns like: "Source", "Lead Source", "UTM Source", "Campaign Source", "Traffic Source", "Origin". If found, map to 'source' with 'map_to_enum' transformation. If NO suitable column exists, add a warning.
-4. Identify columns that should be ignored (not mapped)
-5. Suggest transformations if needed (trim, lowercase, etc.)
+STEP 2: MAP FIELDS BASED ON SHEET TYPE
+
+For LEADS sheets, map to these fields:
+- name (required): Full name or first name
+- email (required): Email address
+- phone (optional): Phone number
+- source (required): Lead source - MUST be one of: "facebook", "instagram", "linkedin", "twitter", "google", "referral", "website", "other"
+- notes (optional): Any additional information
+
+For APPOINTMENTS sheets, map to custom_fields:
+- All columns should go to custom_fields (use transformation: "to_custom")
+- Still extract name and email if present
+
+For DEALS sheets, map to custom_fields:
+- All columns should go to custom_fields (use transformation: "to_custom")
+- Still extract name and email if present
+
+For CALLS sheets, map to custom_fields:
+- All columns should go to custom_fields (use transformation: "to_custom")
+- Still extract name and email if present
+
+CRITICAL RULES:
+1. ALWAYS map 'name' and 'email' if they exist - these connect records
+2. For 'source' field (LEADS sheets only):
+   - Look for columns like: Source, Lead Source, UTM Source, Campaign, Channel, Origin
+   - Map to closest matching enum value: facebook, instagram, linkedin, twitter, google, referral, website, other
+   - If no source column exists, use transformation: "default_other"
+   - Add transformation: "map_to_enum" if you map a source column
+3. For any non-standard fields, map them to custom_fields with transformation: "to_custom"
+
+Available transformations:
+- "none": Use value as-is
+- "to_lowercase": Convert to lowercase
+- "to_uppercase": Convert to uppercase
+- "trim_whitespace": Remove extra spaces
+- "map_to_enum": Map text values to predefined options
+- "to_custom": Store in custom_fields jsonb
+- "default_other": Set default value to "other"
+
+Return a JSON object with this structure:
+{
+  "sheet_type": "leads|appointments|deals|calls",
+  "mappings": [
+    {
+      "sheet_column": "Original Column Name",
+      "db_field": "target_field_name",
+      "transformation": "transformation_name",
+      "confidence": "high|medium|low"
+    }
+  ],
+  "warnings": ["Any issues or recommendations"],
+  "headers": ["all", "column", "names"],
+  "row_count": 123,
+  "sample_rows": [first 3 rows of data]
+}
 6. Identify potential data quality issues
 7. Return ONLY valid JSON, no markdown or explanations
 

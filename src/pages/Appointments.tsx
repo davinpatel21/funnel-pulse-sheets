@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useSheetConfigurations } from "@/hooks/useSheetConfigurations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Search, Trash2, Edit } from "lucide-react";
@@ -35,7 +36,8 @@ export default function Appointments() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: appointments, isLoading } = useQuery({
+  // Fetch database appointments
+  const { data: dbAppointments, isLoading: isLoadingDb } = useQuery({
     queryKey: ["appointments"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -46,6 +48,42 @@ export default function Appointments() {
       return data;
     },
   });
+
+  // Fetch live sheet appointments
+  const { data: configs } = useSheetConfigurations();
+  const appointmentsConfig = configs?.find(c => c.sheet_type === 'appointments');
+  
+  const { data: liveAppointments, isLoading: isLoadingLive } = useQuery({
+    queryKey: ['live-appointments', appointmentsConfig?.id],
+    queryFn: async () => {
+      if (!appointmentsConfig) return [];
+      
+      const { data } = await supabase.functions.invoke('google-sheets-live', {
+        body: { configuration_id: appointmentsConfig.id }
+      });
+      
+      // Transform live data to match appointment structure
+      return (data?.data || []).map((record: any) => ({
+        id: `live-${record.email || record.name}`,
+        lead_id: null,
+        scheduled_at: record.custom_fields?.scheduled_for || record.custom_fields?.booking_time,
+        status: record.status || 'scheduled',
+        notes: record.notes || '',
+        setter_id: null,
+        closer_id: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        leads: { name: record.name, email: record.email },
+        isLive: true
+      }));
+    },
+    enabled: !!appointmentsConfig,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  // Merge database + live appointments
+  const appointments = [...(dbAppointments || []), ...(liveAppointments || [])];
+  const isLoading = isLoadingDb || isLoadingLive;
 
   const { data: leads } = useQuery({
     queryKey: ["leads-list"],

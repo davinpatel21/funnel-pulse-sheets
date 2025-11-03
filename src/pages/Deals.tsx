@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useSheetConfigurations } from "@/hooks/useSheetConfigurations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Trash2, Edit } from "lucide-react";
@@ -35,7 +36,8 @@ export default function Deals() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: deals, isLoading } = useQuery({
+  // Fetch database deals
+  const { data: dbDeals, isLoading: isLoadingDb } = useQuery({
     queryKey: ["deals"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -46,6 +48,45 @@ export default function Deals() {
       return data;
     },
   });
+
+  // Fetch live sheet deals
+  const { data: configs } = useSheetConfigurations();
+  const dealsConfig = configs?.find(c => c.sheet_type === 'deals');
+  
+  const { data: liveDeals, isLoading: isLoadingLive } = useQuery({
+    queryKey: ['live-deals', dealsConfig?.id],
+    queryFn: async () => {
+      if (!dealsConfig) return [];
+      
+      const { data } = await supabase.functions.invoke('google-sheets-live', {
+        body: { configuration_id: dealsConfig.id }
+      });
+      
+      // Transform live data to match deal structure
+      return (data?.data || []).map((record: any) => ({
+        id: `live-${record.email || record.name}`,
+        lead_id: null,
+        revenue_amount: parseFloat(record.custom_fields?.revenue || record.custom_fields?.amount || 0),
+        cash_collected: parseFloat(record.custom_fields?.cash_collected || 0),
+        fees_amount: parseFloat(record.custom_fields?.fees || 0),
+        status: record.status || 'pending',
+        setter_id: null,
+        closer_id: null,
+        appointment_id: null,
+        created_at: record.custom_fields?.closed_at || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        closed_at: record.custom_fields?.closed_at,
+        leads: { name: record.name, email: record.email },
+        isLive: true
+      }));
+    },
+    enabled: !!dealsConfig,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  // Merge database + live deals
+  const deals = [...(dbDeals || []), ...(liveDeals || [])];
+  const isLoading = isLoadingDb || isLoadingLive;
 
   const { data: leads } = useQuery({
     queryKey: ["leads-list"],
