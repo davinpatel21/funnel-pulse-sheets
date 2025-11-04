@@ -95,6 +95,18 @@ serve(async (req) => {
             break;
         }
 
+        // Parse date fields for appointments
+        if (mapping.dbField === 'booked_at' || mapping.dbField === 'scheduled_at') {
+          try {
+            const date = new Date(value);
+            if (!isNaN(date.getTime())) {
+              transformedValue = date.toISOString();
+            }
+          } catch (e) {
+            console.warn(`Failed to parse date for ${mapping.dbField}: ${value}`);
+          }
+        }
+
         // Route to appropriate field
         if (mapping.dbField === 'custom_fields') {
           if (!record.custom_fields) record.custom_fields = {};

@@ -218,8 +218,7 @@ CRITICAL: Return ONLY valid JSON with this EXACT structure (no markdown, use cam
   "mappings": [
     {
       "sheetColumn": "Booking Time",
-      "dbField": "custom_fields",
-      "customFieldKey": "booking_time",
+      "dbField": "booked_at",
       "confidence": 95,
       "transformation": "none"
     }
@@ -230,6 +229,21 @@ CRITICAL: Return ONLY valid JSON with this EXACT structure (no markdown, use cam
     "status": "new"
   }
 }
+
+FOR APPOINTMENTS SHEETS, MAP THESE COLUMNS TO STANDARD FIELDS (NOT custom_fields):
+- "Booking Time" / "Booked At" / "Created" → dbField: "booked_at" (timestamp)
+- "Scheduled For" / "Appointment Time" / "Appointment Date" → dbField: "scheduled_at" (timestamp)  
+- "Recording" / "Call Recording" / "Recording URL" → dbField: "recording_url" (text)
+- "Pipeline" / "Closer" / "Assigned To" → dbField: "pipeline" (text)
+- "Post Call Form" / "Form URL" → dbField: "post_call_form_url" (text)
+- "Closer Form Filled" / "Form Status" → dbField: "closer_form_status" (text)
+- "Financially Qualified?" / "Status" / "Show Status" → dbField: "status" (enum: scheduled, completed, no_show, cancelled)
+- "Name" → dbField: "name" (for lead reference)
+- "Email" → dbField: "email" (for lead reference)
+- "Phone" → dbField: "phone" (for lead reference)
+- "Notes" / "Comments" → dbField: "notes" (text)
+
+ALL OTHER FIELDS → dbField: "custom_fields" with customFieldKey
 
 CRITICAL RULES:
 - Use camelCase: sheetColumn, dbField, customFieldKey (NOT snake_case)

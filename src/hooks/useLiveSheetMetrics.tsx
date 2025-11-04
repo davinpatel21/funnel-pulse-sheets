@@ -139,6 +139,35 @@ function calculateMetrics(leads: any[], appointments: any[], deals: any[], calls
     return acc;
   }, {} as Record<string, number>);
 
+  // Calculate booking velocity (avg days from booked to scheduled)
+  const appointmentsWithDates = appointments.filter(a => a.booked_at && a.scheduled_at);
+  const avgDaysToBook = appointmentsWithDates.length > 0
+    ? appointmentsWithDates.reduce((sum, a) => {
+        const bookedTime = new Date(a.booked_at).getTime();
+        const scheduledTime = new Date(a.scheduled_at).getTime();
+        const days = (scheduledTime - bookedTime) / (1000 * 60 * 60 * 24);
+        return sum + days;
+      }, 0) / appointmentsWithDates.length
+    : 0;
+
+  // Track recording availability
+  const appointmentsWithRecordings = appointments.filter(a => a.recording_url).length;
+  const recordingRate = totalCallsBooked > 0 
+    ? (appointmentsWithRecordings / totalCallsBooked) * 100 
+    : 0;
+
+  // Pipeline-specific metrics
+  const pipelineMetrics = appointments.reduce((acc, a) => {
+    const pipeline = a.pipeline || 'Unassigned';
+    if (!acc[pipeline]) {
+      acc[pipeline] = { total: 0, shows: 0, noShows: 0, closes: 0 };
+    }
+    acc[pipeline].total++;
+    if (a.status === 'completed') acc[pipeline].shows++;
+    if (a.status === 'no_show') acc[pipeline].noShows++;
+    return acc;
+  }, {} as Record<string, any>);
+
   return {
     totalRevenue,
     totalCashCollected,
@@ -154,6 +183,9 @@ function calculateMetrics(leads: any[], appointments: any[], deals: any[], calls
     totalLeads: leads.length,
     appointmentStatusCounts,
     leadSourceCounts,
+    avgDaysToBook,
+    recordingRate,
+    pipelineMetrics,
   };
 }
 
@@ -173,5 +205,8 @@ function getEmptyMetrics() {
     totalLeads: 0,
     appointmentStatusCounts: {},
     leadSourceCounts: {},
+    avgDaysToBook: 0,
+    recordingRate: 0,
+    pipelineMetrics: {},
   };
 }

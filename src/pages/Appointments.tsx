@@ -66,9 +66,14 @@ export default function Appointments() {
       return (data?.data || []).map((record: any) => ({
         id: `live-${record.email || record.name}`,
         lead_id: null,
-        scheduled_at: record.custom_fields?.scheduled_for || record.custom_fields?.booking_time,
+        booked_at: record.booked_at || null,
+        scheduled_at: record.scheduled_at || record.custom_fields?.scheduled_for || record.custom_fields?.booking_time,
         status: record.status || 'scheduled',
         notes: record.notes || '',
+        pipeline: record.pipeline || null,
+        recording_url: record.recording_url || null,
+        post_call_form_url: record.post_call_form_url || null,
+        closer_form_status: record.closer_form_status || null,
         setter_id: null,
         closer_id: null,
         created_at: new Date().toISOString(),
@@ -253,8 +258,11 @@ export default function Appointments() {
           <TableHeader>
             <TableRow>
               <TableHead>Lead</TableHead>
+              <TableHead>Booked At</TableHead>
               <TableHead>Scheduled</TableHead>
+              <TableHead>Pipeline</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Recording</TableHead>
               <TableHead>Notes</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -262,39 +270,54 @@ export default function Appointments() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center">Loading...</TableCell>
+                <TableCell colSpan={8} className="text-center">Loading...</TableCell>
               </TableRow>
             ) : appointments?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center">No appointments found</TableCell>
+                <TableCell colSpan={8} className="text-center">No appointments found</TableCell>
               </TableRow>
             ) : (
               appointments?.map((appointment) => (
                 <TableRow key={appointment.id}>
                   <TableCell className="font-medium">{appointment.leads?.name}</TableCell>
+                  <TableCell>
+                    {appointment.booked_at ? new Date(appointment.booked_at).toLocaleDateString() : '-'}
+                  </TableCell>
                   <TableCell>{new Date(appointment.scheduled_at).toLocaleString()}</TableCell>
+                  <TableCell>{appointment.pipeline || '-'}</TableCell>
                   <TableCell>
                     <span className="capitalize">{appointment.status.replace("_", " ")}</span>
                   </TableCell>
+                  <TableCell>
+                    {appointment.recording_url ? (
+                      <a href={appointment.recording_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                        🎥 View
+                      </a>
+                    ) : '-'}
+                  </TableCell>
                   <TableCell>{appointment.notes}</TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setEditingAppointment(appointment);
-                        setIsDialogOpen(true);
-                      }}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => deleteMutation.mutate(appointment.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {!appointment.isLive && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setEditingAppointment(appointment);
+                            setIsDialogOpen(true);
+                          }}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteMutation.mutate(appointment.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

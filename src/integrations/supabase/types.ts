@@ -82,33 +82,48 @@ export type Database = {
       }
       appointments: {
         Row: {
+          booked_at: string | null
+          closer_form_status: string | null
           closer_id: string | null
           created_at: string
           id: string
           lead_id: string
           notes: string | null
+          pipeline: string | null
+          post_call_form_url: string | null
+          recording_url: string | null
           scheduled_at: string
           setter_id: string | null
           status: Database["public"]["Enums"]["appointment_status"]
           updated_at: string
         }
         Insert: {
+          booked_at?: string | null
+          closer_form_status?: string | null
           closer_id?: string | null
           created_at?: string
           id?: string
           lead_id: string
           notes?: string | null
+          pipeline?: string | null
+          post_call_form_url?: string | null
+          recording_url?: string | null
           scheduled_at: string
           setter_id?: string | null
           status?: Database["public"]["Enums"]["appointment_status"]
           updated_at?: string
         }
         Update: {
+          booked_at?: string | null
+          closer_form_status?: string | null
           closer_id?: string | null
           created_at?: string
           id?: string
           lead_id?: string
           notes?: string | null
+          pipeline?: string | null
+          post_call_form_url?: string | null
+          recording_url?: string | null
           scheduled_at?: string
           setter_id?: string | null
           status?: Database["public"]["Enums"]["appointment_status"]
