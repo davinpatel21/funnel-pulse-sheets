@@ -25,26 +25,24 @@ export function GoogleSheetsOAuth() {
     }
   });
 
-  // Initiate OAuth flow - redirect to Google
+  // Initiate OAuth flow
   const connectMutation = useMutation({
     mutationFn: async () => {
+      setIsConnecting(true);
       const { data: { session } } = await supabase.auth.getSession();
+      
       if (!session) {
         throw new Error('Not authenticated');
       }
 
-      setIsConnecting(true);
-
-      // Get OAuth URL from backend
-      const { data, error } = await supabase.functions.invoke(
-        'google-sheets-oauth/initiate',
-        {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        }
-      );
+      const { data, error } = await supabase.functions.invoke('google-sheets-oauth/initiate', {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
 
       if (error) throw error;
-
+      
       // Redirect to Google OAuth
       window.location.href = data.authUrl;
     },
@@ -112,9 +110,7 @@ export function GoogleSheetsOAuth() {
           )}
         </CardTitle>
         <CardDescription>
-          {isConnected 
-            ? "Your Google account is connected and syncing automatically"
-            : "Connect your Google account to enable automatic Google Sheets sync"}
+          Connect your Google account to enable two-way sync with Google Sheets
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -125,7 +121,7 @@ export function GoogleSheetsOAuth() {
             className="gap-2"
           >
             <ExternalLink className="h-4 w-4" />
-            {isConnecting ? "Connecting..." : "Connect Google Sheets"}
+            Connect Google Sheets
           </Button>
         )}
 

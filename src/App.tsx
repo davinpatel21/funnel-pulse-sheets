@@ -28,53 +28,19 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     // Check current session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
-      
-      // Store Google OAuth tokens if present
-      if (session?.provider_token && session?.provider_refresh_token) {
-        await storeGoogleTokens(session);
-      }
-      
       setLoading(false);
     });
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
       setUser(session?.user ?? null);
-      
-      // Store Google OAuth tokens on sign-in
-      if (event === 'SIGNED_IN' && session?.provider_token && session?.provider_refresh_token) {
-        setTimeout(async () => {
-          await storeGoogleTokens(session);
-        }, 0);
-      }
-      
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
-
-  // Helper function to store Google OAuth tokens
-  const storeGoogleTokens = async (session: any) => {
-    try {
-      const expiresAt = new Date(Date.now() + 3600 * 1000).toISOString();
-      
-      await supabase
-        .from('google_sheets_credentials')
-        .upsert({
-          user_id: session.user.id,
-          access_token: session.provider_token,
-          refresh_token: session.provider_refresh_token,
-          expires_at: expiresAt,
-        }, {
-          onConflict: 'user_id'
-        });
-    } catch (error) {
-      console.error('Failed to store Google tokens:', error);
-    }
-  };
 
   if (loading) {
     return (
