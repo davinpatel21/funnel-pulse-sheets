@@ -17,13 +17,17 @@ interface MetricsGridProps {
     totalCashCollected: number;
     cashAfterFees: number;
     cashPerCall: number;
-    avgOrderValue: number;
-    totalCallsBooked: number;
+    avgDealSize: number;
+    totalAppointmentsBooked: number;
+    totalDeals: number;
+    shows: number;
+    noShows: number;
     liveCalls: number;
     totalCalls: number;
     closeRate: number;
     noShowRate: number;
     showRate: number;
+    recordingRate: number;
     totalLeads: number;
   };
   isLoading?: boolean;
@@ -64,60 +68,72 @@ export const MetricsGrid = ({ metrics, isLoading }: MetricsGridProps) => {
       {/* Mid-tier Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         <MetricCard
-          title="Cash Collected After Fees"
-          value={formatCurrency(metrics.cashAfterFees)}
-          icon={DollarSign}
+          title="Total Deals Closed"
+          value={metrics.totalDeals}
+          icon={CheckCircle}
+          iconColor="text-success"
+        />
+        <MetricCard
+          title="Average Deal Size"
+          value={formatCurrency(metrics.avgDealSize)}
+          icon={Target}
           iconColor="text-foreground"
         />
         <MetricCard
-          title="Cash Collected Per Call Taken"
+          title="Cash Per Call"
           value={formatCurrency(metrics.cashPerCall)}
           icon={PhoneCall}
-          iconColor="text-foreground"
-        />
-        <MetricCard
-          title="Average Order Value"
-          value={formatCurrency(metrics.avgOrderValue)}
-          icon={Target}
           iconColor="text-foreground"
         />
       </div>
 
       {/* Call & Activity Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
         <MetricCard
-          title="Total Calls Booked"
-          value={metrics.totalCallsBooked}
+          title="Appointments Booked"
+          value={metrics.totalAppointmentsBooked}
           icon={Calendar}
           iconColor="text-foreground"
         />
         <MetricCard
-          title="Total Live Calls"
-          value={metrics.liveCalls}
-          icon={Phone}
-          iconColor="text-foreground"
+          title="Shows"
+          value={metrics.shows}
+          icon={CheckCircle}
+          iconColor="text-success"
         />
         <MetricCard
-          title="Total Close Rate"
-          value={`${metrics.closeRate.toFixed(2)}%`}
-          icon={CheckCircle}
+          title="No Shows"
+          value={metrics.noShows}
+          icon={XCircle}
+          iconColor="text-destructive"
+        />
+        <MetricCard
+          title="Close Rate"
+          value={`${metrics.closeRate.toFixed(1)}%`}
+          icon={Target}
           iconColor="text-foreground"
         />
       </div>
 
       {/* Show Rate Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <MetricCard
-          title="Total No Show Rate"
-          value={`${metrics.noShowRate.toFixed(2)}%`}
+          title="Show Rate"
+          value={`${metrics.showRate.toFixed(1)}%`}
+          icon={CheckCircle}
+          iconColor="text-success"
+        />
+        <MetricCard
+          title="No Show Rate"
+          value={`${metrics.noShowRate.toFixed(1)}%`}
           icon={XCircle}
           iconColor="text-destructive"
         />
         <MetricCard
-          title="Show Rate"
-          value={`${metrics.showRate.toFixed(2)}%`}
-          icon={CheckCircle}
-          iconColor="text-success"
+          title="Recording Rate"
+          value={`${metrics.recordingRate.toFixed(1)}%`}
+          icon={Phone}
+          iconColor="text-foreground"
         />
       </div>
     </>

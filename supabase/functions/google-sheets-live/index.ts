@@ -67,6 +67,7 @@ serve(async (req) => {
     // Apply mappings to transform data
     const transformedData = rows.map(row => {
       const record: any = { user_id: user.id };
+      const tempData: any = {}; // Temp storage for fields that need combining
       
       config.mappings.forEach((mapping: any) => {
         const value = row[mapping.sheetColumn];
@@ -86,6 +87,14 @@ serve(async (req) => {
           case 'clean_phone':
             transformedValue = value.replace(/[^0-9+]/g, '');
             break;
+          case 'skip_if_placeholder':
+            // Skip "IN CRM" or similar placeholder values
+            if (value.toUpperCase().includes('IN CRM') || value.toUpperCase() === 'N/A') return;
+            break;
+          case 'parse_currency':
+            // Parse currency values: "$1,200" → 1200
+            transformedValue = parseFloat(value.replace(/[$,]/g, '')) || 0;
+            break;
           case 'map_to_enum':
             if (mapping.dbField === 'source') {
               transformedValue = mapToSourceEnum(value);
@@ -95,7 +104,15 @@ serve(async (req) => {
             break;
         }
 
-        // Parse date fields for appointments
+        // Store date/time components temporarily for combining
+        if (mapping.customFieldKey === 'appointmentDate' || 
+            mapping.customFieldKey === 'appointmentTime' || 
+            mapping.customFieldKey === 'rawDate') {
+          tempData[mapping.customFieldKey] = transformedValue;
+          return; // Don't add to record yet
+        }
+
+        // Parse single date fields
         if (mapping.dbField === 'booked_at' || mapping.dbField === 'scheduled_at') {
           try {
             const date = new Date(value);
@@ -107,6 +124,13 @@ serve(async (req) => {
           }
         }
 
+        // Store names for later profile lookup
+        if (mapping.customFieldKey === 'closerName' || mapping.customFieldKey === 'setterName') {
+          if (!record.custom_fields) record.custom_fields = {};
+          record.custom_fields[mapping.customFieldKey] = transformedValue;
+          return;
+        }
+
         // Route to appropriate field
         if (mapping.dbField === 'custom_fields') {
           if (!record.custom_fields) record.custom_fields = {};
@@ -116,33 +140,52 @@ serve(async (req) => {
         }
       });
 
-      // For appointments sheets, check if status needs to be derived from custom_fields
-      if (config.sheet_type === 'appointments' || config.sheet_type === 'APPOINTMENTS') {
-        // Check various status indicators
-        const statusIndicators = [
-          'Financially Qualified?',
-          'Status',
-          'Show Status',
-          'Appointment Status',
-          'Result'
-        ];
-        
-        for (const indicator of statusIndicators) {
-          const statusValue = row[indicator];
-          if (statusValue) {
-            const normalized = statusValue.toLowerCase().trim();
-            if (normalized.includes('no show') || normalized === 'dns' || normalized === 'did not show') {
-              record.status = 'no_show';
-              break;
-            } else if (normalized.includes('completed') || normalized.includes('show') || normalized.includes('qualified')) {
-              record.status = 'completed';
-              break;
-            } else if (normalized.includes('cancelled')) {
-              record.status = 'cancelled';
-              break;
-            }
+      // COMBINE DATE FIELDS if we have them stored
+      if (tempData.appointmentDate && (tempData.appointmentTime || tempData.rawDate)) {
+        try {
+          const dateStr = `${tempData.appointmentDate} ${tempData.appointmentTime || tempData.rawDate}`;
+          const combinedDate = new Date(dateStr);
+          if (!isNaN(combinedDate.getTime())) {
+            record.scheduled_at = combinedDate.toISOString();
           }
+        } catch (e) {
+          console.warn('Failed to combine date fields:', tempData);
         }
+      }
+
+      // DERIVE STATUS from "Call Status" column
+      const callStatusValue = row['Call Status'] || row['Status'] || row['Result'];
+      if (callStatusValue) {
+        const normalized = callStatusValue.toLowerCase().trim();
+        
+        if (normalized === 'closed' || normalized.includes('won')) {
+          record.status = 'completed';
+          record.created_deal = true; // Flag to create deal
+        } else if (normalized === 'no close' || normalized.includes('no close')) {
+          record.status = 'completed';
+          record.created_deal = false;
+        } else if (normalized.includes('no show') || normalized === 'dns' || normalized === 'did not show') {
+          record.status = 'no_show';
+        } else if (normalized.includes('cancelled')) {
+          record.status = 'cancelled';
+        } else {
+          record.status = 'scheduled';
+        }
+        
+        // Store raw call status
+        if (!record.custom_fields) record.custom_fields = {};
+        record.custom_fields.callStatus = callStatusValue;
+      }
+
+      // Store revenue/cash for potential deal creation
+      const revenueValue = row['Revenue'];
+      const cashValue = row['Cash Collected'];
+      const paymentPlatform = row['Payment Platform'];
+      
+      if (record.created_deal && (revenueValue || cashValue)) {
+        record.revenue_amount = parseFloat(revenueValue?.replace(/[$,]/g, '') || '0');
+        record.cash_collected = parseFloat(cashValue?.replace(/[$,]/g, '') || '0');
+        record.payment_platform = paymentPlatform;
       }
 
       // Apply defaults

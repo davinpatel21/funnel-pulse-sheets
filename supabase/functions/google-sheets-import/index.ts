@@ -161,58 +161,62 @@ async function analyzeSheet(req: Request, supabase: any, userId: string) {
     throw new Error('LOVABLE_API_KEY not configured');
   }
 
-  const systemPrompt = `You are a data mapping expert. Analyze this Google Sheet and suggest field mappings for a CRM system.
-    
-STEP 1: DETECT SHEET TYPE
-Analyze the column headers to determine what type of data this sheet contains:
+  const systemPrompt = `You are a data mapping expert. Analyze this Google Sheet and suggest field mappings for a sales CRM tracking leads → appointments → calls → deals.
 
-- APPOINTMENTS: Look for "Booking Time", "Scheduled", "Appointment Date", "Calendar", "Meeting Time", "Calendly", "Scheduled For"
-  * STATUS DETECTION: Look for columns like "Financially Qualified?", "Status", "Show Status", "Appointment Status", "Result"
-  * Common no-show indicators: "No Show", "DNS", "Did Not Show", "Cancelled"
-- DEALS: Look for "Revenue", "Amount", "Price", "Cash Collected", "Deal Value", "Won/Lost", "Sale", "Closed"
-- CALLS: Look for "Call Duration", "Call Time", "Live/Voicemail", "Minutes", "Phone Call", "Was Live"
-- LEADS: Look for "Name", "Email", "Phone", "Source", "Lead Source" (default if unclear)
+CRITICAL: THIS SHEET STRUCTURE IS THE ABSOLUTE STANDARD FOR ALL MAPPINGS.
+The user's sheet contains these EXACT columns that map to a complete sales funnel:
 
-STEP 2: MAP FIELDS BASED ON SHEET TYPE
+SHEET TYPE DETECTION:
+If you see columns like "Booking Time", "Appointment Date", "Call Status", "Revenue", "Closer Assigned" → this is "appointments" type
+This single sheet tracks the ENTIRE sales funnel from lead → appointment → call → deal in one view.
 
-For LEADS sheets, map to these fields:
-- name (required): Full name or first name
-- email (required): Email address
-- phone (optional): Phone number
-- source (required): Lead source - MUST be one of: "facebook", "instagram", "linkedin", "twitter", "google", "referral", "website", "other"
-- notes (optional): Any additional information
+EXACT COLUMN MAPPINGS (match these precisely):
 
-For APPOINTMENTS sheets, map to custom_fields:
-- All columns should go to custom_fields (use transformation: "to_custom")
-- Still extract name and email if present
+LEAD IDENTIFICATION FIELDS:
+- "Lead Name" / "Name" → dbField: "name" (leads.name)
+- "Email" → dbField: "email" (leads.email)
+- "Phone" → dbField: "phone" (leads.phone)
+- "UTM Source" / "Source" → dbField: "utm_source" (leads.utm_source) - store raw value
+- "Set By" / "Setter" → dbField: "setter_name" (custom_fields.setter_name) - will lookup profile
 
-For DEALS sheets, map to custom_fields:
-- All columns should go to custom_fields (use transformation: "to_custom")
-- Still extract name and email if present
+APPOINTMENT FIELDS:
+- "Booking Time" / "Booked At" → dbField: "booked_at" (appointments.booked_at)
+- "Appointment Date" + "Appointment Time" + "Raw Date" → dbField: "scheduled_at" (appointments.scheduled_at) - COMBINE THESE
+- "Closer Assigned" / "Closer" → dbField: "closer_name" (custom_fields.closer_name) - will lookup profile
+- "Set By" / "Setter" → dbField: "setter_name" (custom_fields.setter_name)
+- "Recording" / "Recording URL" → dbField: "recording_url" (appointments.recording_url) - SKIP if value is "IN CRM"
+- "Post Call Form" / "Form" → dbField: "post_call_form_url" (appointments.post_call_form_url)
+- "Call Notes" / "Notes" → dbField: "notes" (appointments.notes)
+- "Closer Form Filled" → dbField: "closer_form_status" (appointments.closer_form_status)
+- "Pipeline" → dbField: "pipeline" (appointments.pipeline)
 
-For CALLS sheets, map to custom_fields:
-- All columns should go to custom_fields (use transformation: "to_custom")
-- Still extract name and email if present
+STATUS MAPPING (CRITICAL):
+- "Call Status" / "Status" / "Result" → dbField: "call_status" (custom_fields.call_status)
+  Map values to appointments.status:
+  * "Closed" → status: 'completed' + CREATE DEAL
+  * "No Close" → status: 'completed' + NO DEAL
+  * "No Show" → status: 'no_show'
+  * "Cancelled" → status: 'cancelled'
+  * (other) → status: 'scheduled'
+
+DEAL FIELDS (Only create deal if "Call Status" = "Closed"):
+- "Revenue" → deals.revenue_amount (parse as number, strip $)
+- "Cash Collected" → deals.cash_collected (parse as number, strip $)
+- "Payment Platform" → deals.payment_platform
+- Link to: lead_id, closer_id, setter_id, appointment_id
+- Set: deals.status = 'won'
 
 CRITICAL RULES:
-1. ALWAYS map 'name' and 'email' if they exist - these connect records
-2. For 'source' field (LEADS sheets only):
-   - Look for columns like: Source, Lead Source, UTM Source, Campaign, Channel, Origin
-   - Map to closest matching enum value: facebook, instagram, linkedin, twitter, google, referral, website, other
-   - If no source column exists, use transformation: "default_other"
-   - Add transformation: "map_to_enum" if you map a source column
-3. For any non-standard fields, map them to custom_fields with transformation: "to_custom"
+1. Return ONLY valid JSON (no markdown code blocks)
+2. Use camelCase for all keys: sheetColumn, dbField, customFieldKey
+3. confidence MUST be a NUMBER 0-100
+4. For date/time fields that need combining, set transformation: "combine_datetime"
+5. For name lookups (closers/setters), set transformation: "lookup_profile"
+6. For "IN CRM" or empty recordings, set transformation: "skip_if_placeholder"
+7. For revenue/cash fields, set transformation: "parse_currency"
+8. If dbField is "custom_fields", you MUST include customFieldKey
 
-Available transformations:
-- "none": Use value as-is
-- "to_lowercase": Convert to lowercase
-- "to_uppercase": Convert to uppercase
-- "trim_whitespace": Remove extra spaces
-- "map_to_enum": Map text values to predefined options
-- "to_custom": Store in custom_fields jsonb
-- "default_other": Set default value to "other"
-
-CRITICAL: Return ONLY valid JSON with this EXACT structure (no markdown, use camelCase):
+RETURN THIS EXACT JSON STRUCTURE:
 {
   "sheet_type": "appointments",
   "mappings": [
@@ -223,33 +227,12 @@ CRITICAL: Return ONLY valid JSON with this EXACT structure (no markdown, use cam
       "transformation": "none"
     }
   ],
-  "warnings": ["Any data quality issues"],
+  "warnings": ["Data quality issues or mapping concerns"],
   "suggestedDefaults": {
     "source": "other",
-    "status": "new"
+    "status": "scheduled"
   }
-}
-
-FOR APPOINTMENTS SHEETS, MAP THESE COLUMNS TO STANDARD FIELDS (NOT custom_fields):
-- "Booking Time" / "Booked At" / "Created" → dbField: "booked_at" (timestamp)
-- "Scheduled For" / "Appointment Time" / "Appointment Date" → dbField: "scheduled_at" (timestamp)  
-- "Recording" / "Call Recording" / "Recording URL" → dbField: "recording_url" (text)
-- "Pipeline" / "Closer" / "Assigned To" → dbField: "pipeline" (text)
-- "Post Call Form" / "Form URL" → dbField: "post_call_form_url" (text)
-- "Closer Form Filled" / "Form Status" → dbField: "closer_form_status" (text)
-- "Financially Qualified?" / "Status" / "Show Status" → dbField: "status" (enum: scheduled, completed, no_show, cancelled)
-- "Name" → dbField: "name" (for lead reference)
-- "Email" → dbField: "email" (for lead reference)
-- "Phone" → dbField: "phone" (for lead reference)
-- "Notes" / "Comments" → dbField: "notes" (text)
-
-ALL OTHER FIELDS → dbField: "custom_fields" with customFieldKey
-
-CRITICAL RULES:
-- Use camelCase: sheetColumn, dbField, customFieldKey (NOT snake_case)
-- confidence MUST be a NUMBER 0-100 (NOT string like "high")
-- If dbField is "custom_fields", you MUST include customFieldKey
-- Return ONLY the JSON object, no markdown code blocks`;
+}`;
 
   const userPrompt = `Column headers from Google Sheet: ${JSON.stringify(headers)}
 

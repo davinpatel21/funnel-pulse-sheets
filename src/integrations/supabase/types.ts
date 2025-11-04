@@ -218,6 +218,7 @@ export type Database = {
           fees_amount: number | null
           id: string
           lead_id: string
+          payment_platform: string | null
           revenue_amount: number
           setter_id: string | null
           status: Database["public"]["Enums"]["deal_status"]
@@ -232,6 +233,7 @@ export type Database = {
           fees_amount?: number | null
           id?: string
           lead_id: string
+          payment_platform?: string | null
           revenue_amount: number
           setter_id?: string | null
           status?: Database["public"]["Enums"]["deal_status"]
@@ -246,6 +248,7 @@ export type Database = {
           fees_amount?: number | null
           id?: string
           lead_id?: string
+          payment_platform?: string | null
           revenue_amount?: number
           setter_id?: string | null
           status?: Database["public"]["Enums"]["deal_status"]
@@ -344,6 +347,7 @@ export type Database = {
           source: Database["public"]["Enums"]["lead_source"]
           status: Database["public"]["Enums"]["lead_status"]
           updated_at: string
+          utm_source: string | null
         }
         Insert: {
           closer_id?: string | null
@@ -358,6 +362,7 @@ export type Database = {
           source?: Database["public"]["Enums"]["lead_source"]
           status?: Database["public"]["Enums"]["lead_status"]
           updated_at?: string
+          utm_source?: string | null
         }
         Update: {
           closer_id?: string | null
@@ -372,6 +377,7 @@ export type Database = {
           source?: Database["public"]["Enums"]["lead_source"]
           status?: Database["public"]["Enums"]["lead_status"]
           updated_at?: string
+          utm_source?: string | null
         }
         Relationships: [
           {

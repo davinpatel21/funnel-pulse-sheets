@@ -78,68 +78,135 @@ function applyFilters(data: any[], filters: DashboardFilters) {
 }
 
 function calculateMetrics(leads: any[], appointments: any[], deals: any[], calls: any[]) {
-  const totalRevenue = deals
-    .filter((d) => d.status === "won")
-    .reduce((sum, deal) => sum + (Number(deal.revenue_amount) || 0), 0);
+  // REVENUE METRICS (from deals or from appointment custom_fields if deals embedded)
+  const dealsData = deals.length > 0 ? deals : 
+    appointments.filter(a => a.revenue_amount || a.custom_fields?.revenue);
   
-  const totalCashCollected = deals.reduce((sum, deal) => sum + (Number(deal.cash_collected) || 0), 0);
-  const totalFees = deals.reduce((sum, deal) => sum + (Number(deal.fees_amount) || 0), 0);
+  const totalRevenue = dealsData.reduce((sum, d) => {
+    const revenue = d.revenue_amount || parseFloat(d.custom_fields?.revenue?.replace(/[$,]/g, '') || '0');
+    return sum + revenue;
+  }, 0);
+  
+  const totalCashCollected = dealsData.reduce((sum, d) => {
+    const cash = d.cash_collected || parseFloat(d.custom_fields?.cashCollected?.replace(/[$,]/g, '') || '0');
+    return sum + cash;
+  }, 0);
+  
+  const totalFees = dealsData.reduce((sum, d) => d.fees_amount || 0, 0);
   const cashAfterFees = totalCashCollected - totalFees;
   
-  const totalCalls = calls.length;
-  const liveCalls = calls.filter((c) => c.was_live).length;
-  const cashPerCall = totalCalls > 0 ? totalCashCollected / totalCalls : 0;
+  // APPOINTMENT METRICS
+  const totalAppointmentsBooked = appointments.length;
   
-  const wonDeals = deals.filter((d) => d.status === "won");
-  const avgOrderValue = wonDeals.length > 0 
-    ? wonDeals.reduce((sum, d) => sum + Number(d.revenue_amount), 0) / wonDeals.length 
-    : 0;
-
-  const totalCallsBooked = appointments.length;
-  
-  // Improved status detection - check both top-level status and custom_fields
-  const getStatus = (appt: any) => {
-    if (appt.status) return appt.status.toLowerCase();
-    
-    // Check custom_fields for status indicators
-    if (appt.custom_fields) {
-      const statusField = appt.custom_fields.status || 
-                         appt.custom_fields['financially_qualified'] ||
-                         appt.custom_fields['show_status'] ||
-                         appt.custom_fields['appointment_status'];
-      if (statusField) return statusField.toLowerCase();
-    }
-    
-    return 'scheduled';
+  // Status breakdown - check both status field and custom_fields.callStatus
+  const getCallStatus = (appt: any) => {
+    const status = appt.custom_fields?.callStatus || appt.status || '';
+    return status.toLowerCase().trim();
   };
   
-  const completedAppts = appointments.filter(a => {
-    const status = getStatus(a);
-    return status === 'completed' || status === 'no_show' || status.includes('no show') || status.includes('qualified');
-  }).length;
+  const closedAppts = appointments.filter(a => {
+    const status = getCallStatus(a);
+    return status === 'closed' || status.includes('won') || a.created_deal === true;
+  });
   
   const noShows = appointments.filter(a => {
-    const status = getStatus(a);
-    return status === 'no_show' || status.includes('no show') || status === 'dns' || status === 'did not show';
+    const status = getCallStatus(a);
+    return status.includes('no show') || status === 'no_show' || status === 'dns';
   }).length;
   
-  const shows = completedAppts - noShows;
+  const shows = appointments.filter(a => {
+    const status = getCallStatus(a);
+    return a.status === 'completed' || status === 'closed' || status === 'no close' || status.includes('qualified');
+  }).length;
   
-  const closeRate = completedAppts > 0 ? (wonDeals.length / completedAppts) * 100 : 0;
-  const noShowRate = totalCallsBooked > 0 ? (noShows / totalCallsBooked) * 100 : 0;
-  const showRate = totalCallsBooked > 0 ? (shows / totalCallsBooked) * 100 : 0;
-
-  const appointmentStatusCounts = appointments.reduce((acc, apt) => {
-    acc[apt.status] = (acc[apt.status] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-
-  const leadSourceCounts = leads.reduce((acc, lead) => {
-    acc[lead.source] = (acc[lead.source] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-
-  // Calculate booking velocity (avg days from booked to scheduled)
+  // RATE CALCULATIONS
+  const showRate = totalAppointmentsBooked > 0 ? (shows / totalAppointmentsBooked) * 100 : 0;
+  const noShowRate = totalAppointmentsBooked > 0 ? (noShows / totalAppointmentsBooked) * 100 : 0;
+  const closeRate = shows > 0 ? (closedAppts.length / shows) * 100 : 0;
+  
+  // DEAL METRICS
+  const totalDeals = closedAppts.length;
+  const avgDealSize = totalDeals > 0 ? totalRevenue / totalDeals : 0;
+  
+  // CALL METRICS
+  const totalCalls = calls.length || shows; // Use shows if no separate calls table
+  const liveCalls = calls.filter((c) => c.was_live).length || shows;
+  const cashPerCall = totalCalls > 0 ? totalCashCollected / totalCalls : 0;
+  
+  // RECORDING TRACKING
+  const appointmentsWithRecordings = appointments.filter(a => 
+    a.recording_url && !a.recording_url.toUpperCase().includes('IN CRM')
+  ).length;
+  const recordingRate = totalAppointmentsBooked > 0 
+    ? (appointmentsWithRecordings / totalAppointmentsBooked) * 100 
+    : 0;
+  
+  // SOURCE PERFORMANCE
+  const sourcePerformance: Record<string, any> = {};
+  appointments.forEach(a => {
+    const source = a.custom_fields?.utmSource || a.utm_source || 'unknown';
+    if (!sourcePerformance[source]) {
+      sourcePerformance[source] = { appts: 0, revenue: 0, deals: 0 };
+    }
+    sourcePerformance[source].appts++;
+    if (a.created_deal || closedAppts.includes(a)) {
+      sourcePerformance[source].deals++;
+      const rev = a.revenue_amount || parseFloat(a.custom_fields?.revenue?.replace(/[$,]/g, '') || '0');
+      sourcePerformance[source].revenue += rev;
+    }
+  });
+  
+  // CLOSER PERFORMANCE
+  const closerPerformance: Record<string, any> = {};
+  appointments.forEach(a => {
+    const closer = a.custom_fields?.closerName || a.pipeline || 'Unassigned';
+    if (!closerPerformance[closer]) {
+      closerPerformance[closer] = { appts: 0, shows: 0, noShows: 0, deals: 0, revenue: 0 };
+    }
+    closerPerformance[closer].appts++;
+    
+    const status = getCallStatus(a);
+    if (status.includes('no show') || a.status === 'no_show') {
+      closerPerformance[closer].noShows++;
+    } else if (a.status === 'completed') {
+      closerPerformance[closer].shows++;
+    }
+    
+    if (a.created_deal || closedAppts.includes(a)) {
+      closerPerformance[closer].deals++;
+      const rev = a.revenue_amount || parseFloat(a.custom_fields?.revenue?.replace(/[$,]/g, '') || '0');
+      closerPerformance[closer].revenue += rev;
+    }
+  });
+  
+  // SETTER PERFORMANCE
+  const setterPerformance: Record<string, any> = {};
+  appointments.forEach(a => {
+    const setter = a.custom_fields?.setterName || a.custom_fields?.setBy || 'Unassigned';
+    if (!setterPerformance[setter]) {
+      setterPerformance[setter] = { appts: 0, shows: 0, deals: 0, revenue: 0 };
+    }
+    setterPerformance[setter].appts++;
+    
+    if (a.status === 'completed') {
+      setterPerformance[setter].shows++;
+    }
+    
+    if (a.created_deal || closedAppts.includes(a)) {
+      setterPerformance[setter].deals++;
+      const rev = a.revenue_amount || parseFloat(a.custom_fields?.revenue?.replace(/[$,]/g, '') || '0');
+      setterPerformance[setter].revenue += rev;
+    }
+  });
+  
+  // PAYMENT PLATFORM BREAKDOWN
+  const paymentPlatforms: Record<string, number> = {};
+  dealsData.forEach(d => {
+    const platform = d.payment_platform || d.custom_fields?.paymentPlatform || 'Unknown';
+    paymentPlatforms[platform] = (paymentPlatforms[platform] || 0) + 1;
+  });
+  
+  // TIME METRICS
   const appointmentsWithDates = appointments.filter(a => a.booked_at && a.scheduled_at);
   const avgDaysToBook = appointmentsWithDates.length > 0
     ? appointmentsWithDates.reduce((sum, a) => {
@@ -150,42 +217,38 @@ function calculateMetrics(leads: any[], appointments: any[], deals: any[], calls
       }, 0) / appointmentsWithDates.length
     : 0;
 
-  // Track recording availability
-  const appointmentsWithRecordings = appointments.filter(a => a.recording_url).length;
-  const recordingRate = totalCallsBooked > 0 
-    ? (appointmentsWithRecordings / totalCallsBooked) * 100 
-    : 0;
-
-  // Pipeline-specific metrics
-  const pipelineMetrics = appointments.reduce((acc, a) => {
-    const pipeline = a.pipeline || 'Unassigned';
-    if (!acc[pipeline]) {
-      acc[pipeline] = { total: 0, shows: 0, noShows: 0, closes: 0 };
-    }
-    acc[pipeline].total++;
-    if (a.status === 'completed') acc[pipeline].shows++;
-    if (a.status === 'no_show') acc[pipeline].noShows++;
-    return acc;
-  }, {} as Record<string, any>);
-
   return {
     totalRevenue,
     totalCashCollected,
     cashAfterFees,
     cashPerCall,
-    avgOrderValue,
-    totalCallsBooked,
+    avgDealSize,
+    totalAppointmentsBooked,
+    totalDeals,
+    shows,
+    noShows,
     liveCalls,
     totalCalls,
     closeRate,
     noShowRate,
     showRate,
-    totalLeads: leads.length,
-    appointmentStatusCounts,
-    leadSourceCounts,
-    avgDaysToBook,
     recordingRate,
-    pipelineMetrics,
+    avgDaysToBook,
+    totalLeads: leads.length,
+    sourcePerformance,
+    closerPerformance,
+    setterPerformance,
+    paymentPlatforms,
+    appointmentStatusCounts: {
+      scheduled: appointments.filter(a => a.status === 'scheduled').length,
+      completed: shows,
+      no_show: noShows,
+      cancelled: appointments.filter(a => a.status === 'cancelled').length,
+    },
+    leadSourceCounts: leads.reduce((acc, lead) => {
+      acc[lead.source] = (acc[lead.source] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>),
   };
 }
 
@@ -195,18 +258,24 @@ function getEmptyMetrics() {
     totalCashCollected: 0,
     cashAfterFees: 0,
     cashPerCall: 0,
-    avgOrderValue: 0,
-    totalCallsBooked: 0,
+    avgDealSize: 0,
+    totalAppointmentsBooked: 0,
+    totalDeals: 0,
+    shows: 0,
+    noShows: 0,
     liveCalls: 0,
     totalCalls: 0,
     closeRate: 0,
     noShowRate: 0,
     showRate: 0,
+    recordingRate: 0,
+    avgDaysToBook: 0,
     totalLeads: 0,
+    sourcePerformance: {},
+    closerPerformance: {},
+    setterPerformance: {},
+    paymentPlatforms: {},
     appointmentStatusCounts: {},
     leadSourceCounts: {},
-    avgDaysToBook: 0,
-    recordingRate: 0,
-    pipelineMetrics: {},
   };
 }

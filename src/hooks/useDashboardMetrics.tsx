@@ -77,55 +77,38 @@ export const useDashboardMetrics = (filters: DashboardFilters = {}) => {
       const appointments = appointmentsResult.data || [];
       const calls = callsResult.data || [];
 
-      // Calculate metrics
-      const totalRevenue = deals
-        .filter((d) => d.status === "won")
-        .reduce((sum, d) => sum + Number(d.revenue_amount), 0);
-
+      // Calculate metrics to match new standard
+      const wonDeals = deals.filter((d) => d.status === "won");
+      const totalRevenue = wonDeals.reduce((sum, d) => sum + Number(d.revenue_amount), 0);
       const totalCashCollected = deals.reduce((sum, d) => sum + Number(d.cash_collected), 0);
-      
       const totalFees = deals.reduce((sum, d) => sum + Number(d.fees_amount), 0);
-      
       const cashAfterFees = totalCashCollected - totalFees;
+
+      const totalDeals = wonDeals.length;
+      const avgDealSize = totalDeals > 0 ? totalRevenue / totalDeals : 0;
 
       const liveCalls = calls.filter((c) => c.was_live).length;
       const totalCalls = calls.length;
-      
       const cashPerCall = totalCalls > 0 ? totalCashCollected / totalCalls : 0;
 
-      const wonDeals = deals.filter((d) => d.status === "won");
-      const avgOrderValue = wonDeals.length > 0 
-        ? wonDeals.reduce((sum, d) => sum + Number(d.revenue_amount), 0) / wonDeals.length 
-        : 0;
-
-      const totalCallsBooked = appointments.length;
-      
-      const completedAppointments = appointments.filter((a) => 
-        a.status === "completed" || a.status === "no_show"
-      ).length;
-      
+      const totalAppointmentsBooked = appointments.length;
       const noShows = appointments.filter((a) => a.status === "no_show").length;
-      const shows = completedAppointments - noShows;
+      const shows = appointments.filter((a) => a.status === "completed").length;
       
-      const closeRate = completedAppointments > 0 
-        ? (wonDeals.length / completedAppointments) * 100 
-        : 0;
-      
-      const noShowRate = totalCallsBooked > 0 
-        ? (noShows / totalCallsBooked) * 100 
-        : 0;
-      
-      const showRate = totalCallsBooked > 0 
-        ? (shows / totalCallsBooked) * 100 
+      const showRate = totalAppointmentsBooked > 0 ? (shows / totalAppointmentsBooked) * 100 : 0;
+      const noShowRate = totalAppointmentsBooked > 0 ? (noShows / totalAppointmentsBooked) * 100 : 0;
+      const closeRate = shows > 0 ? (totalDeals / shows) * 100 : 0;
+
+      const appointmentsWithRecordings = appointments.filter(a => a.recording_url).length;
+      const recordingRate = totalAppointmentsBooked > 0 
+        ? (appointmentsWithRecordings / totalAppointmentsBooked) * 100 
         : 0;
 
-      // Appointment status breakdown
       const appointmentStatusCounts = appointments.reduce((acc, apt) => {
         acc[apt.status] = (acc[apt.status] || 0) + 1;
         return acc;
       }, {} as Record<string, number>);
 
-      // Lead source breakdown
       const sourceFilteredLeads = filters.source 
         ? leads.filter((l) => l.source === filters.source)
         : leads;
@@ -140,13 +123,17 @@ export const useDashboardMetrics = (filters: DashboardFilters = {}) => {
         totalCashCollected,
         cashAfterFees,
         cashPerCall,
-        avgOrderValue,
-        totalCallsBooked,
-        liveCalls: liveCalls,
+        avgDealSize,
+        totalAppointmentsBooked,
+        totalDeals,
+        shows,
+        noShows,
+        liveCalls,
         totalCalls,
         closeRate,
         noShowRate,
         showRate,
+        recordingRate,
         totalLeads: leads.length,
         appointmentStatusCounts,
         leadSourceCounts,
