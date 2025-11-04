@@ -42,8 +42,11 @@ Deno.serve(async (req) => {
         throw new Error('Invalid user token');
       }
 
-      // Store user ID in state parameter
-      const state = btoa(JSON.stringify({ userId: user.id }));
+      // Get redirect origin from request body
+      const { redirectOrigin } = await req.json().catch(() => ({}));
+
+      // Store user ID and redirect origin in state parameter
+      const state = btoa(JSON.stringify({ userId: user.id, redirectOrigin }));
 
       const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
       authUrl.searchParams.set('client_id', clientId);
@@ -69,8 +72,8 @@ Deno.serve(async (req) => {
         throw new Error('Missing code or state parameter');
       }
 
-      // Decode state to get user ID
-      const { userId } = JSON.parse(atob(state));
+      // Decode state to get user ID and redirect origin
+      const { userId, redirectOrigin } = JSON.parse(atob(state));
 
       // Exchange code for tokens
       const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
@@ -113,10 +116,13 @@ Deno.serve(async (req) => {
       }
 
       // Redirect back to settings page with success message
+      const fallbackUrl = supabaseUrl.replace('.supabase.co', '.lovable.app');
+      const targetOrigin = redirectOrigin || fallbackUrl;
+      
       return new Response(null, {
         status: 302,
         headers: {
-          'Location': `${supabaseUrl.replace('.supabase.co', '.lovable.app')}/settings?oauth=success`,
+          'Location': `${targetOrigin}/settings?oauth=success`,
         },
       });
     }

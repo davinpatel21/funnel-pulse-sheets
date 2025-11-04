@@ -39,12 +39,25 @@ export function GoogleSheetsOAuth() {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
         },
+        body: { redirectOrigin: window.location.origin },
       });
 
       if (error) throw error;
       
-      // Redirect to Google OAuth
-      window.location.href = data.authUrl;
+      // Open OAuth in new tab
+      const authUrl = data.authUrl as string;
+      const newWindow = window.open(authUrl, '_blank', 'noopener,noreferrer');
+      
+      if (!newWindow) {
+        // Popup blocked - fallback to full page redirect
+        toast({
+          title: "Pop-up blocked",
+          description: "Redirecting you now. Please allow pop-ups for this site.",
+        });
+        window.location.href = authUrl;
+      } else {
+        setIsConnecting(false);
+      }
     },
     onError: (error: Error) => {
       setIsConnecting(false);
