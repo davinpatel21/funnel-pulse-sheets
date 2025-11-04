@@ -50,6 +50,14 @@ serve(async (req) => {
     if (action === 'analyze') {
       return await analyzeSheet(req, supabase, userId);
     } else if (action === 'import') {
+      const body = await req.json();
+      const sheetType = body.sheetType || 'leads';
+      
+      if (sheetType === 'team_roster') {
+        const { importTeamRoster } = await import('./team-roster-import.ts');
+        return await importTeamRoster(req, supabase, userId, body);
+      }
+      
       return await executeImport(req, supabase, userId);
     } else {
       throw new Error('Invalid action parameter');

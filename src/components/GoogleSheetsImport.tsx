@@ -106,6 +106,7 @@ export function GoogleSheetsImport() {
       const { data, error } = await supabase.functions.invoke('google-sheets-import?action=import', {
         body: {
           sheetUrl: sheetUrl,
+          sheetType: sheetType,
           mappings: mappings,
           defaults: analysisResult.analysis.suggestedDefaults,
         },
@@ -464,7 +465,7 @@ export function GoogleSheetsImport() {
           Import from Google Sheets
         </CardTitle>
         <CardDescription>
-          Paste your Google Sheets URL and let AI automatically map the fields. 
+          Paste your Google Sheets URL and select the sheet type.
           Make sure your sheet is set to "Anyone with the link can view".
         </CardDescription>
       </CardHeader>
@@ -479,15 +480,29 @@ export function GoogleSheetsImport() {
           />
         </div>
 
+        <div className="space-y-2">
+          <Label htmlFor="sheet-type">Sheet Type</Label>
+          <Select value={sheetType} onValueChange={(value) => setSheetType(value)}>
+            <SelectTrigger id="sheet-type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="leads">Leads</SelectItem>
+              <SelectItem value="appointments">Appointments</SelectItem>
+              <SelectItem value="team_roster">Team Roster</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         <Button
           onClick={handleAnalyze}
-          disabled={analyzeMutation.isPending}
+          disabled={!sheetUrl || analyzeMutation.isPending}
           className="w-full"
         >
           {analyzeMutation.isPending ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Analyzing Sheet...
+              Analyzing...
             </>
           ) : (
             'Analyze Sheet'
