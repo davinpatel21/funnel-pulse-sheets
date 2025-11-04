@@ -13,6 +13,9 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectGroup,
+  SelectLabel,
+  SelectSeparator,
 } from "@/components/ui/select";
 import {
   Table,
@@ -337,18 +340,62 @@ export function GoogleSheetsImport() {
                         value={mapping.dbField || "ignore"}
                         onValueChange={(value) => handleMappingChange(index, value)}
                       >
-                        <SelectTrigger className="w-[180px]">
+                        <SelectTrigger className="w-[220px]">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ignore">Ignore</SelectItem>
-                          <SelectItem value="name">Name *</SelectItem>
-                          <SelectItem value="email">Email *</SelectItem>
-                          <SelectItem value="phone">Phone</SelectItem>
-                          <SelectItem value="status">Status</SelectItem>
-                          <SelectItem value="source">Source</SelectItem>
-                          <SelectItem value="notes">Notes</SelectItem>
-                          <SelectItem value="custom_fields">Custom Field</SelectItem>
+                        <SelectContent className="max-h-[400px]">
+                          <SelectItem value="ignore">❌ Ignore Field</SelectItem>
+                          
+                          <SelectSeparator />
+                          <SelectGroup>
+                            <SelectLabel className="text-xs font-semibold">📊 Lead Fields (Required)</SelectLabel>
+                            <SelectItem value="name">Name *</SelectItem>
+                            <SelectItem value="email">Email *</SelectItem>
+                            <SelectItem value="phone">Phone</SelectItem>
+                          </SelectGroup>
+                          
+                          <SelectSeparator />
+                          <SelectGroup>
+                            <SelectLabel className="text-xs font-semibold">📝 Lead Details</SelectLabel>
+                            <SelectItem value="status">Lead Status</SelectItem>
+                            <SelectItem value="source">Lead Source</SelectItem>
+                            <SelectItem value="utm_source">UTM Source</SelectItem>
+                            <SelectItem value="notes">Notes</SelectItem>
+                          </SelectGroup>
+                          
+                          <SelectSeparator />
+                          <SelectGroup>
+                            <SelectLabel className="text-xs font-semibold">📅 Appointment Fields</SelectLabel>
+                            <SelectItem value="booked_at">Booking Time</SelectItem>
+                            <SelectItem value="scheduled_at">Scheduled Date/Time</SelectItem>
+                            <SelectItem value="appointment_status">Appointment Status</SelectItem>
+                            <SelectItem value="pipeline">Pipeline</SelectItem>
+                            <SelectItem value="recording_url">Recording URL</SelectItem>
+                            <SelectItem value="post_call_form_url">Post Call Form URL</SelectItem>
+                            <SelectItem value="closer_form_status">Closer Form Status</SelectItem>
+                          </SelectGroup>
+                          
+                          <SelectSeparator />
+                          <SelectGroup>
+                            <SelectLabel className="text-xs font-semibold">👥 Team Assignments</SelectLabel>
+                            <SelectItem value="closer_name">Closer Assigned (Lookup)</SelectItem>
+                            <SelectItem value="setter_name">Setter Assigned (Lookup)</SelectItem>
+                          </SelectGroup>
+                          
+                          <SelectSeparator />
+                          <SelectGroup>
+                            <SelectLabel className="text-xs font-semibold">💰 Deal Fields (Creates Deal if Closed)</SelectLabel>
+                            <SelectItem value="revenue_amount">Revenue Amount</SelectItem>
+                            <SelectItem value="cash_collected">Cash Collected</SelectItem>
+                            <SelectItem value="fees_amount">Fees Amount</SelectItem>
+                            <SelectItem value="payment_platform">Payment Platform</SelectItem>
+                          </SelectGroup>
+                          
+                          <SelectSeparator />
+                          <SelectGroup>
+                            <SelectLabel className="text-xs font-semibold">🔧 Advanced</SelectLabel>
+                            <SelectItem value="custom_fields">Custom Field (JSONB)</SelectItem>
+                          </SelectGroup>
                         </SelectContent>
                       </Select>
                       {mapping.dbField === 'custom_fields' && (
