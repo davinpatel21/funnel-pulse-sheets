@@ -95,6 +95,7 @@ export type Database = {
           scheduled_at: string
           setter_id: string | null
           status: Database["public"]["Enums"]["appointment_status"]
+          sync_metadata: Json | null
           updated_at: string
         }
         Insert: {
@@ -111,6 +112,7 @@ export type Database = {
           scheduled_at: string
           setter_id?: string | null
           status?: Database["public"]["Enums"]["appointment_status"]
+          sync_metadata?: Json | null
           updated_at?: string
         }
         Update: {
@@ -127,6 +129,7 @@ export type Database = {
           scheduled_at?: string
           setter_id?: string | null
           status?: Database["public"]["Enums"]["appointment_status"]
+          sync_metadata?: Json | null
           updated_at?: string
         }
         Relationships: [
@@ -162,6 +165,7 @@ export type Database = {
           id: string
           lead_id: string
           notes: string | null
+          sync_metadata: Json | null
           was_live: boolean | null
         }
         Insert: {
@@ -172,6 +176,7 @@ export type Database = {
           id?: string
           lead_id: string
           notes?: string | null
+          sync_metadata?: Json | null
           was_live?: boolean | null
         }
         Update: {
@@ -182,6 +187,7 @@ export type Database = {
           id?: string
           lead_id?: string
           notes?: string | null
+          sync_metadata?: Json | null
           was_live?: boolean | null
         }
         Relationships: [
@@ -222,6 +228,7 @@ export type Database = {
           revenue_amount: number
           setter_id: string | null
           status: Database["public"]["Enums"]["deal_status"]
+          sync_metadata: Json | null
           updated_at: string
         }
         Insert: {
@@ -237,6 +244,7 @@ export type Database = {
           revenue_amount: number
           setter_id?: string | null
           status?: Database["public"]["Enums"]["deal_status"]
+          sync_metadata?: Json | null
           updated_at?: string
         }
         Update: {
@@ -252,6 +260,7 @@ export type Database = {
           revenue_amount?: number
           setter_id?: string | null
           status?: Database["public"]["Enums"]["deal_status"]
+          sync_metadata?: Json | null
           updated_at?: string
         }
         Relationships: [
@@ -284,6 +293,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      google_sheets_credentials: {
+        Row: {
+          access_token: string
+          created_at: string | null
+          expires_at: string
+          id: string
+          refresh_token: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          access_token: string
+          created_at?: string | null
+          expires_at: string
+          id?: string
+          refresh_token: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          access_token?: string
+          created_at?: string | null
+          expires_at?: string
+          id?: string
+          refresh_token?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       google_sheets_imports: {
         Row: {
@@ -346,6 +385,7 @@ export type Database = {
           setter_id: string | null
           source: Database["public"]["Enums"]["lead_source"]
           status: Database["public"]["Enums"]["lead_status"]
+          sync_metadata: Json | null
           updated_at: string
           utm_source: string | null
         }
@@ -361,6 +401,7 @@ export type Database = {
           setter_id?: string | null
           source?: Database["public"]["Enums"]["lead_source"]
           status?: Database["public"]["Enums"]["lead_status"]
+          sync_metadata?: Json | null
           updated_at?: string
           utm_source?: string | null
         }
@@ -376,6 +417,7 @@ export type Database = {
           setter_id?: string | null
           source?: Database["public"]["Enums"]["lead_source"]
           status?: Database["public"]["Enums"]["lead_status"]
+          sync_metadata?: Json | null
           updated_at?: string
           utm_source?: string | null
         }
@@ -488,6 +530,50 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      sync_operations: {
+        Row: {
+          completed_at: string | null
+          errors: Json | null
+          id: string
+          operation_type: string
+          records_affected: number | null
+          sheet_config_id: string | null
+          started_at: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          errors?: Json | null
+          id?: string
+          operation_type: string
+          records_affected?: number | null
+          sheet_config_id?: string | null
+          started_at?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          errors?: Json | null
+          id?: string
+          operation_type?: string
+          records_affected?: number | null
+          sheet_config_id?: string | null
+          started_at?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sync_operations_sheet_config_id_fkey"
+            columns: ["sheet_config_id"]
+            isOneToOne: false
+            referencedRelation: "sheet_configurations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {

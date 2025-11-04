@@ -8,3 +8,15 @@ verify_jwt = false
 
 [functions.google-sheets-import]
 verify_jwt = true
+
+[functions.google-sheets-oauth]
+verify_jwt = true
+
+[functions.google-sheets-write-back]
+verify_jwt = true
+
+[functions.google-sheets-auto-sync]
+verify_jwt = false
+
+[functions.google-sheets-live]
+verify_jwt = true

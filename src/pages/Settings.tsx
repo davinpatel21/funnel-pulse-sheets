@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Copy, Plus, Trash2, Key } from "lucide-react";
 import { GoogleSheetsImport } from "@/components/GoogleSheetsImport";
 import { ConnectedSheets } from "@/components/ConnectedSheets";
+import { GoogleSheetsOAuth } from "@/components/GoogleSheetsOAuth";
 import {
   Dialog,
   DialogContent,
@@ -123,6 +124,7 @@ export default function Settings() {
     <div className="p-8 space-y-6">
       <h1 className="text-3xl font-bold">Settings</h1>
 
+      <GoogleSheetsOAuth />
       <GoogleSheetsImport />
       <ConnectedSheets />
 
