@@ -306,6 +306,7 @@ ${JSON.stringify(sampleRows, null, 2)}`;
       sheetId,
       headers,
       totalRows: rows.length - 1,
+      sheet_type: analysisResult.sheet_type,
       analysis: analysisResult,
       sampleRows: sampleRows.slice(0, 3),
     }),

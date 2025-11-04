@@ -38,6 +38,7 @@ interface AnalysisResult {
   sheetId: string;
   headers: string[];
   totalRows: number;
+  sheet_type: string;
   analysis: {
     mappings: Mapping[];
     warnings: string[];
@@ -51,6 +52,7 @@ export function GoogleSheetsImport() {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [mappings, setMappings] = useState<Mapping[]>([]);
   const [importResult, setImportResult] = useState<any>(null);
+  const [sheetType, setSheetType] = useState<string>('leads');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const { toast } = useToast();
@@ -82,6 +84,7 @@ export function GoogleSheetsImport() {
     onSuccess: (data: AnalysisResult) => {
       setAnalysisResult(data);
       setMappings(data.analysis.mappings);
+      setSheetType(data.sheet_type || 'leads');
       toast({ title: "Sheet analyzed successfully!" });
     },
     onError: (error: any) => {
@@ -134,7 +137,7 @@ export function GoogleSheetsImport() {
         .insert({
           user_id: userId,
           sheet_url: sheetUrl,
-          sheet_type: 'leads',
+          sheet_type: sheetType,
           mappings: mappings as any,
           is_active: true,
         })
@@ -203,6 +206,7 @@ export function GoogleSheetsImport() {
     setAnalysisResult(null);
     setMappings([]);
     setImportResult(null);
+    setSheetType('leads');
   };
 
   // Show login required message if not authenticated
@@ -289,7 +293,8 @@ export function GoogleSheetsImport() {
         <CardHeader>
           <CardTitle>Review Field Mappings</CardTitle>
           <CardDescription>
-            AI has suggested these mappings. Review and adjust before importing {analysisResult.totalRows} rows.
+            AI has detected this as an <Badge variant="secondary" className="mx-1">{sheetType}</Badge> sheet.
+            Review and adjust mappings before importing {analysisResult.totalRows} rows.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
