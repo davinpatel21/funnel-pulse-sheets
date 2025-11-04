@@ -87,11 +87,10 @@ export const useDashboardMetrics = (filters: DashboardFilters = {}) => {
       const totalDeals = wonDeals.length;
       const avgDealSize = totalDeals > 0 ? totalRevenue / totalDeals : 0;
 
+      const totalAppointmentsBooked = appointments.length;
       const liveCalls = calls.filter((c) => c.was_live).length;
       const totalCalls = calls.length;
-      const cashPerCall = totalCalls > 0 ? totalCashCollected / totalCalls : 0;
-
-      const totalAppointmentsBooked = appointments.length;
+      const cashPerBookedCall = totalAppointmentsBooked > 0 ? totalCashCollected / totalAppointmentsBooked : 0;
       const noShows = appointments.filter((a) => a.status === "no_show").length;
       const shows = appointments.filter((a) => a.status === "completed").length;
       
@@ -99,10 +98,7 @@ export const useDashboardMetrics = (filters: DashboardFilters = {}) => {
       const noShowRate = totalAppointmentsBooked > 0 ? (noShows / totalAppointmentsBooked) * 100 : 0;
       const closeRate = shows > 0 ? (totalDeals / shows) * 100 : 0;
 
-      const appointmentsWithRecordings = appointments.filter(a => a.recording_url).length;
-      const recordingRate = totalAppointmentsBooked > 0 
-        ? (appointmentsWithRecordings / totalAppointmentsBooked) * 100 
-        : 0;
+      const processorFeePercentage = totalRevenue > 0 ? (totalFees / totalRevenue) * 100 : 0;
 
       const appointmentStatusCounts = appointments.reduce((acc, apt) => {
         acc[apt.status] = (acc[apt.status] || 0) + 1;
@@ -122,7 +118,7 @@ export const useDashboardMetrics = (filters: DashboardFilters = {}) => {
         totalRevenue,
         totalCashCollected,
         cashAfterFees,
-        cashPerCall,
+        cashPerBookedCall,
         avgDealSize,
         totalAppointmentsBooked,
         totalDeals,
@@ -133,7 +129,7 @@ export const useDashboardMetrics = (filters: DashboardFilters = {}) => {
         closeRate,
         noShowRate,
         showRate,
-        recordingRate,
+        processorFeePercentage,
         totalLeads: leads.length,
         appointmentStatusCounts,
         leadSourceCounts,

@@ -7,12 +7,12 @@ interface ChartsSectionProps {
 }
 
 const COLORS = [
-  "hsl(var(--primary))",
-  "hsl(var(--success))",
-  "hsl(var(--warning))",
-  "hsl(var(--destructive))",
+  "hsl(var(--success))",    // Green for Closed
+  "hsl(var(--warning))",    // Yellow for No Close
+  "hsl(var(--destructive))", // Red for No Show
+  "hsl(var(--primary))",    // Blue for Scheduled
+  "hsl(var(--muted))",      // Gray for Other
   "hsl(var(--accent))",
-  "hsl(var(--muted))",
 ];
 
 export const ChartsSection = ({
@@ -20,12 +20,12 @@ export const ChartsSection = ({
   leadSourceCounts,
 }: ChartsSectionProps) => {
   const statusData = Object.entries(appointmentStatusCounts).map(([name, value]) => ({
-    name: name.replace("_", " ").toUpperCase(),
+    name: name, // Keep as-is (Closed, No Show, No Close, Scheduled, Other)
     value,
   }));
 
   const sourceData = Object.entries(leadSourceCounts).map(([name, value]) => ({
-    name: name.replace("_", " ").toUpperCase(),
+    name: name, // Keep UTM source values as-is
     value,
   }));
 

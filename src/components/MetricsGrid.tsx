@@ -16,7 +16,7 @@ interface MetricsGridProps {
     totalRevenue: number;
     totalCashCollected: number;
     cashAfterFees: number;
-    cashPerCall: number;
+    cashPerBookedCall: number;
     avgDealSize: number;
     totalAppointmentsBooked: number;
     totalDeals: number;
@@ -27,8 +27,8 @@ interface MetricsGridProps {
     closeRate: number;
     noShowRate: number;
     showRate: number;
-    recordingRate: number;
     totalLeads: number;
+    processorFeePercentage: number;
   };
   isLoading?: boolean;
 }
@@ -52,7 +52,7 @@ export const MetricsGrid = ({ metrics, isLoading }: MetricsGridProps) => {
     totalRevenue: metrics.totalRevenue ?? 0,
     totalCashCollected: metrics.totalCashCollected ?? 0,
     cashAfterFees: metrics.cashAfterFees ?? 0,
-    cashPerCall: metrics.cashPerCall ?? 0,
+    cashPerBookedCall: metrics.cashPerBookedCall ?? 0,
     avgDealSize: metrics.avgDealSize ?? 0,
     totalAppointmentsBooked: metrics.totalAppointmentsBooked ?? 0,
     totalDeals: metrics.totalDeals ?? 0,
@@ -63,8 +63,8 @@ export const MetricsGrid = ({ metrics, isLoading }: MetricsGridProps) => {
     closeRate: metrics.closeRate ?? 0,
     noShowRate: metrics.noShowRate ?? 0,
     showRate: metrics.showRate ?? 0,
-    recordingRate: metrics.recordingRate ?? 0,
     totalLeads: metrics.totalLeads ?? 0,
+    processorFeePercentage: metrics.processorFeePercentage ?? 0,
   };
 
   return (
@@ -100,8 +100,8 @@ export const MetricsGrid = ({ metrics, isLoading }: MetricsGridProps) => {
           iconColor="text-foreground"
         />
         <MetricCard
-          title="Cash Per Call"
-          value={formatCurrency(safeMetrics.cashPerCall)}
+          title="Cash Per Booked Call"
+          value={formatCurrency(safeMetrics.cashPerBookedCall)}
           icon={PhoneCall}
           iconColor="text-foreground"
         />
@@ -150,10 +150,10 @@ export const MetricsGrid = ({ metrics, isLoading }: MetricsGridProps) => {
           iconColor="text-destructive"
         />
         <MetricCard
-          title="Recording Rate"
-          value={`${safeMetrics.recordingRate.toFixed(1)}%`}
-          icon={Phone}
-          iconColor="text-foreground"
+          title="Payment Processor Fees"
+          value={`${safeMetrics.processorFeePercentage.toFixed(1)}%`}
+          icon={DollarSign}
+          iconColor="text-warning"
         />
       </div>
     </>

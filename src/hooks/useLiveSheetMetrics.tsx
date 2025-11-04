@@ -131,15 +131,10 @@ function calculateMetrics(leads: any[], appointments: any[], deals: any[], calls
   // CALL METRICS
   const totalCalls = calls.length || shows; // Use shows if no separate calls table
   const liveCalls = calls.filter((c) => c.was_live).length || shows;
-  const cashPerCall = totalCalls > 0 ? totalCashCollected / totalCalls : 0;
+  const cashPerBookedCall = totalAppointmentsBooked > 0 ? totalCashCollected / totalAppointmentsBooked : 0;
   
-  // RECORDING TRACKING
-  const appointmentsWithRecordings = appointments.filter(a => 
-    a.recording_url && !a.recording_url.toUpperCase().includes('IN CRM')
-  ).length;
-  const recordingRate = totalAppointmentsBooked > 0 
-    ? (appointmentsWithRecordings / totalAppointmentsBooked) * 100 
-    : 0;
+  // PAYMENT PROCESSOR FEE TRACKING
+  const processorFeePercentage = totalRevenue > 0 ? (totalFees / totalRevenue) * 100 : 0;
   
   // SOURCE PERFORMANCE
   const sourcePerformance: Record<string, any> = {};
@@ -217,11 +212,37 @@ function calculateMetrics(leads: any[], appointments: any[], deals: any[], calls
       }, 0) / appointmentsWithDates.length
     : 0;
 
+  // FIX APPOINTMENT STATUS COUNTS - Use Call Status values from sheet
+  const appointmentStatusCounts: Record<string, number> = {};
+  appointments.forEach(a => {
+    const callStatus = getCallStatus(a);
+    let displayStatus = 'Other';
+    
+    if (callStatus === 'closed' || callStatus.includes('won') || a.created_deal) {
+      displayStatus = 'Closed';
+    } else if (callStatus.includes('no show') || callStatus === 'no_show') {
+      displayStatus = 'No Show';
+    } else if (callStatus === 'no close' || callStatus.includes('no close')) {
+      displayStatus = 'No Close';
+    } else if (callStatus === 'scheduled' || a.status === 'scheduled') {
+      displayStatus = 'Scheduled';
+    }
+    
+    appointmentStatusCounts[displayStatus] = (appointmentStatusCounts[displayStatus] || 0) + 1;
+  });
+  
+  // FIX LEAD SOURCE COUNTS - Use UTM Source from appointments
+  const leadSourceCounts: Record<string, number> = {};
+  appointments.forEach(a => {
+    const source = a.custom_fields?.utmSource || a.utm_source || 'Unknown';
+    leadSourceCounts[source] = (leadSourceCounts[source] || 0) + 1;
+  });
+
   return {
     totalRevenue,
     totalCashCollected,
     cashAfterFees,
-    cashPerCall,
+    cashPerBookedCall,
     avgDealSize,
     totalAppointmentsBooked,
     totalDeals,
@@ -232,23 +253,15 @@ function calculateMetrics(leads: any[], appointments: any[], deals: any[], calls
     closeRate,
     noShowRate,
     showRate,
-    recordingRate,
+    processorFeePercentage,
     avgDaysToBook,
     totalLeads: leads.length,
     sourcePerformance,
     closerPerformance,
     setterPerformance,
     paymentPlatforms,
-    appointmentStatusCounts: {
-      scheduled: appointments.filter(a => a.status === 'scheduled').length,
-      completed: shows,
-      no_show: noShows,
-      cancelled: appointments.filter(a => a.status === 'cancelled').length,
-    },
-    leadSourceCounts: leads.reduce((acc, lead) => {
-      acc[lead.source] = (acc[lead.source] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>),
+    appointmentStatusCounts,
+    leadSourceCounts,
   };
 }
 
@@ -257,7 +270,7 @@ function getEmptyMetrics() {
     totalRevenue: 0,
     totalCashCollected: 0,
     cashAfterFees: 0,
-    cashPerCall: 0,
+    cashPerBookedCall: 0,
     avgDealSize: 0,
     totalAppointmentsBooked: 0,
     totalDeals: 0,
@@ -268,7 +281,7 @@ function getEmptyMetrics() {
     closeRate: 0,
     noShowRate: 0,
     showRate: 0,
-    recordingRate: 0,
+    processorFeePercentage: 0,
     avgDaysToBook: 0,
     totalLeads: 0,
     sourcePerformance: {},
