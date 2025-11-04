@@ -112,19 +112,19 @@ export function GoogleSheetsOAuth() {
         <CardDescription>
           {isConnected 
             ? "Your Google account is connected and syncing automatically"
-            : "Sign in with Google on the login page to enable automatic Google Sheets sync"}
+            : "Connect your Google account to enable automatic Google Sheets sync"}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {!isConnected && (
-          <div className="text-sm text-muted-foreground">
-            <p>To connect Google Sheets:</p>
-            <ol className="list-decimal ml-4 mt-2 space-y-1">
-              <li>Log out from your current session</li>
-              <li>Sign in again using "Sign in with Google"</li>
-              <li>Grant access to Google Sheets when prompted</li>
-            </ol>
-          </div>
+          <Button
+            onClick={() => connectMutation.mutate()}
+            disabled={isConnecting}
+            className="gap-2"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Connect Google Sheets
+          </Button>
         )}
 
         {isConnected && (

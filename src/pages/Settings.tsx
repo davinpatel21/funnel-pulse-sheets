@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,19 @@ export default function Settings() {
   const [newApiKey, setNewApiKey] = useState<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Show success toast if redirected from OAuth
+  useEffect(() => {
+    if (searchParams.get('oauth') === 'success') {
+      toast({
+        title: "Google Sheets connected",
+        description: "Your Google account is now connected and syncing automatically",
+      });
+      // Remove the query param
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams, toast]);
 
   const { data: apiKeys } = useQuery({
     queryKey: ["api-keys"],
