@@ -44,17 +44,39 @@ export function GoogleSheetsOAuth() {
 
       if (error) throw error;
       
-      // Open OAuth in new tab
       const authUrl = data.authUrl as string;
+      
+      // Check if we're in an iframe
+      const inIframe = window.self !== window.top;
+      
+      if (inIframe) {
+        // Break out of iframe to avoid "Refused to connect"
+        try {
+          window.top!.location.assign(authUrl);
+        } catch {
+          window.location.assign(authUrl);
+        }
+        return;
+      }
+      
+      // Not in iframe - try opening in new tab
       const newWindow = window.open(authUrl, '_blank', 'noopener,noreferrer');
       
       if (!newWindow) {
-        // Popup blocked - fallback to full page redirect
+        // Popup blocked - use top-level navigation
         toast({
           title: "Pop-up blocked",
           description: "Redirecting you now. Please allow pop-ups for this site.",
         });
-        window.location.href = authUrl;
+        try {
+          if (window.top) {
+            window.top.location.assign(authUrl);
+          } else {
+            window.location.assign(authUrl);
+          }
+        } catch {
+          window.location.assign(authUrl);
+        }
       } else {
         setIsConnecting(false);
       }
