@@ -371,6 +371,21 @@ async function executeImport(req: Request, supabase: any, userId: string) {
           }
         }
 
+        // Auto-create profiles for team members
+        if (mapping.customFieldKey === 'closerName' && value) {
+          const profileId = await findOrCreateProfile(supabase, value, 'closer');
+          if (profileId) lead.closer_id = profileId;
+          customFields.closerName = value;
+          continue;
+        }
+        
+        if (mapping.customFieldKey === 'setterName' && value) {
+          const profileId = await findOrCreateProfile(supabase, value, 'setter');
+          if (profileId) lead.setter_id = profileId;
+          customFields.setterName = value;
+          continue;
+        }
+
         // Route to standard field or custom fields
         if (mapping.dbField === 'custom_fields') {
           const fieldKey = mapping.customFieldKey || mapping.sheetColumn.toLowerCase().replace(/\s+/g, '_');
@@ -454,4 +469,48 @@ async function executeImport(req: Request, supabase: any, userId: string) {
     JSON.stringify(results),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
   );
+}
+
+async function findOrCreateProfile(supabase: any, name: string, role: 'closer' | 'setter'): Promise<string | null> {
+  if (!name || typeof name !== 'string') return null;
+  
+  const normalizedName = name.trim();
+  if (!normalizedName) return null;
+
+  // Try to find existing profile by full_name (case-insensitive)
+  const { data: existing, error: searchError } = await supabase
+    .from('profiles')
+    .select('id')
+    .ilike('full_name', normalizedName)
+    .maybeSingle();
+
+  if (existing) {
+    return existing.id;
+  }
+
+  // Create new profile with service role (bypasses RLS)
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const serviceSupabase = createClient(supabaseUrl, serviceRoleKey);
+
+  // Generate a placeholder email from name
+  const emailSlug = normalizedName.toLowerCase().replace(/\s+/g, '.').replace(/[^a-z0-9.]/g, '');
+  const generatedEmail = `${emailSlug}@team.internal`;
+
+  const { data: newProfile, error: insertError } = await serviceSupabase
+    .from('profiles')
+    .insert({
+      full_name: normalizedName,
+      email: generatedEmail,
+      role: role,
+    })
+    .select('id')
+    .single();
+
+  if (insertError) {
+    console.error('Failed to create profile:', insertError);
+    return null;
+  }
+
+  return newProfile.id;
 }

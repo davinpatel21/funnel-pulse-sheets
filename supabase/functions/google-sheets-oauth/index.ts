@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
 
     const redirectUri = `${supabaseUrl}/functions/v1/google-sheets-oauth/callback`;
 
-    // Route: Initiate OAuth flow
+    // Route: Get OAuth config (for token-based flow)
     if (path === 'initiate') {
       const authHeader = req.headers.get('Authorization');
       if (!authHeader) {
@@ -42,23 +42,69 @@ Deno.serve(async (req) => {
         throw new Error('Invalid user token');
       }
 
-      // Get redirect origin from request body
-      const { redirectOrigin } = await req.json().catch(() => ({}));
+      return new Response(
+        JSON.stringify({ clientId }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
-      // Store user ID and redirect origin in state parameter
-      const state = btoa(JSON.stringify({ userId: user.id, redirectOrigin }));
+    // Route: Store access token and exchange for refresh token
+    if (path === 'store') {
+      const authHeader = req.headers.get('Authorization');
+      if (!authHeader) {
+        throw new Error('No authorization header');
+      }
 
-      const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-      authUrl.searchParams.set('client_id', clientId);
-      authUrl.searchParams.set('redirect_uri', redirectUri);
-      authUrl.searchParams.set('response_type', 'code');
-      authUrl.searchParams.set('scope', 'https://www.googleapis.com/auth/spreadsheets');
-      authUrl.searchParams.set('access_type', 'offline');
-      authUrl.searchParams.set('prompt', 'consent');
-      authUrl.searchParams.set('state', state);
+      const token = authHeader.replace('Bearer ', '');
+      const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+      
+      if (userError || !user) {
+        throw new Error('Invalid user token');
+      }
+
+      const { accessToken } = await req.json();
+
+      // Exchange for refresh token using Google's token endpoint
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          code: accessToken,
+          grant_type: 'authorization_code',
+          redirect_uri: 'postmessage', // For token-based flow
+        }),
+      });
+
+      let tokens;
+      if (tokenResponse.ok) {
+        tokens = await tokenResponse.json();
+      } else {
+        // If exchange fails, just store the access token
+        tokens = { access_token: accessToken, expires_in: 3600 };
+      }
+
+      const expiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000);
+
+      // Store tokens
+      const { error: dbError } = await supabase
+        .from('google_sheets_credentials')
+        .upsert({
+          user_id: user.id,
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token || accessToken,
+          expires_at: expiresAt.toISOString(),
+        }, {
+          onConflict: 'user_id'
+        });
+
+      if (dbError) {
+        throw new Error('Failed to store credentials');
+      }
 
       return new Response(
-        JSON.stringify({ authUrl: authUrl.toString() }),
+        JSON.stringify({ success: true }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

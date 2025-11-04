@@ -65,14 +65,14 @@ serve(async (req) => {
     }
 
     // Apply mappings to transform data
-    const transformedData = rows.map(row => {
+    const transformedData = await Promise.all(rows.map(async (row) => {
       const record: any = { user_id: user.id };
       const tempData: any = {}; // Temp storage for fields that need combining
       
-      config.mappings.forEach((mapping: any) => {
+      for (const mapping of config.mappings) {
         const value = row[mapping.sheetColumn];
         
-        if (!value || mapping.dbField === 'ignore') return;
+        if (!value || mapping.dbField === 'ignore') continue;
 
         let transformedValue = value;
 
@@ -89,7 +89,7 @@ serve(async (req) => {
             break;
           case 'skip_if_placeholder':
             // Skip "IN CRM" or similar placeholder values
-            if (value.toUpperCase().includes('IN CRM') || value.toUpperCase() === 'N/A') return;
+            if (value.toUpperCase().includes('IN CRM') || value.toUpperCase() === 'N/A') continue;
             break;
           case 'parse_currency':
             // Parse currency values: "$1,200" → 1200
@@ -109,7 +109,7 @@ serve(async (req) => {
             mapping.customFieldKey === 'appointmentTime' || 
             mapping.customFieldKey === 'rawDate') {
           tempData[mapping.customFieldKey] = transformedValue;
-          return; // Don't add to record yet
+          continue; // Don't add to record yet
         }
 
         // Parse single date fields
@@ -124,11 +124,21 @@ serve(async (req) => {
           }
         }
 
-        // Store names for later profile lookup
-        if (mapping.customFieldKey === 'closerName' || mapping.customFieldKey === 'setterName') {
+        // Auto-create profiles for team members
+        if (mapping.customFieldKey === 'closerName') {
+          const profileId = await findOrCreateProfile(supabase, transformedValue, 'closer');
+          if (profileId) record.closer_id = profileId;
           if (!record.custom_fields) record.custom_fields = {};
-          record.custom_fields[mapping.customFieldKey] = transformedValue;
-          return;
+          record.custom_fields.closerName = transformedValue;
+          continue;
+        }
+        
+        if (mapping.customFieldKey === 'setterName') {
+          const profileId = await findOrCreateProfile(supabase, transformedValue, 'setter');
+          if (profileId) record.setter_id = profileId;
+          if (!record.custom_fields) record.custom_fields = {};
+          record.custom_fields.setterName = transformedValue;
+          continue;
         }
 
         // Route to appropriate field
@@ -138,7 +148,7 @@ serve(async (req) => {
         } else {
           record[mapping.dbField] = transformedValue;
         }
-      });
+      }
 
       // COMBINE DATE FIELDS if we have them stored
       if (tempData.appointmentDate && (tempData.appointmentTime || tempData.rawDate)) {
@@ -193,7 +203,7 @@ serve(async (req) => {
       if (!record.status) record.status = config.sheet_type === 'appointments' ? 'scheduled' : 'new';
 
       return record;
-    });
+    }));
 
     console.log(`Transformed ${transformedData.length} records`);
     if (transformedData.length > 0) {
@@ -307,4 +317,48 @@ function mapToStatusEnum(value: string): string {
   if (normalized.includes('unqualified')) return 'unqualified';
   if (normalized.includes('lost')) return 'lost';
   return 'new';
+}
+
+async function findOrCreateProfile(supabase: any, name: string, role: 'closer' | 'setter'): Promise<string | null> {
+  if (!name || typeof name !== 'string') return null;
+  
+  const normalizedName = name.trim();
+  if (!normalizedName) return null;
+
+  // Try to find existing profile by full_name (case-insensitive)
+  const { data: existing, error: searchError } = await supabase
+    .from('profiles')
+    .select('id')
+    .ilike('full_name', normalizedName)
+    .maybeSingle();
+
+  if (existing) {
+    return existing.id;
+  }
+
+  // Create new profile with service role (bypasses RLS)
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const serviceSupabase = createClient(supabaseUrl, serviceRoleKey);
+
+  // Generate a placeholder email from name
+  const emailSlug = normalizedName.toLowerCase().replace(/\s+/g, '.').replace(/[^a-z0-9.]/g, '');
+  const generatedEmail = `${emailSlug}@team.internal`;
+
+  const { data: newProfile, error: insertError } = await serviceSupabase
+    .from('profiles')
+    .insert({
+      full_name: normalizedName,
+      email: generatedEmail,
+      role: role,
+    })
+    .select('id')
+    .single();
+
+  if (insertError) {
+    console.error('Failed to create profile:', insertError);
+    return null;
+  }
+
+  return newProfile.id;
 }

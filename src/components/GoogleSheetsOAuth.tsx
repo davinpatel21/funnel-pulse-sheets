@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -7,9 +7,30 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, XCircle, RefreshCw, ExternalLink } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
+
 export function GoogleSheetsOAuth() {
   const [isConnecting, setIsConnecting] = useState(false);
+  const [googleLoaded, setGoogleLoaded] = useState(false);
   const queryClient = useQueryClient();
+
+  // Load Google Identity Services
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => setGoogleLoaded(true);
+    document.head.appendChild(script);
+
+    return () => {
+      document.head.removeChild(script);
+    };
+  }, []);
 
   // Check if user has connected Google Sheets
   const { data: credentials, isLoading } = useQuery({
@@ -25,61 +46,62 @@ export function GoogleSheetsOAuth() {
     }
   });
 
-  // Initiate OAuth flow
+  // Initiate OAuth flow with Google Identity Services
   const connectMutation = useMutation({
     mutationFn: async () => {
-      setIsConnecting(true);
+      if (!window.google || !googleLoaded) {
+        throw new Error('Google Identity Services not loaded');
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
-      
       if (!session) {
         throw new Error('Not authenticated');
       }
 
-      const { data, error } = await supabase.functions.invoke('google-sheets-oauth/initiate', {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
+      setIsConnecting(true);
+
+      // Get Google client ID from backend
+      const { data: configData, error: configError } = await supabase.functions.invoke(
+        'google-sheets-oauth/initiate',
+        {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }
+      );
+
+      if (configError) throw configError;
+
+      const clientId = configData.clientId;
+
+      // Use Google's token client for OAuth
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'https://www.googleapis.com/auth/spreadsheets',
+        callback: async (response: any) => {
+          if (response.error) {
+            throw new Error(response.error);
+          }
+
+          // Send token to backend to exchange and store
+          const { error: storeError } = await supabase.functions.invoke(
+            'google-sheets-oauth/store',
+            {
+              headers: { Authorization: `Bearer ${session.access_token}` },
+              body: { accessToken: response.access_token },
+            }
+          );
+
+          if (storeError) throw storeError;
+
+          setIsConnecting(false);
+          queryClient.invalidateQueries({ queryKey: ['google-sheets-credentials'] });
+          toast({
+            title: "Connected!",
+            description: "Google Sheets connected successfully",
+          });
         },
-        body: { redirectOrigin: window.location.origin },
       });
 
-      if (error) throw error;
-      
-      const authUrl = data.authUrl as string;
-      
-      // Check if we're in an iframe
-      const inIframe = window.self !== window.top;
-      
-      if (inIframe) {
-        // Break out of iframe to avoid "Refused to connect"
-        try {
-          window.top!.location.assign(authUrl);
-        } catch {
-          window.location.assign(authUrl);
-        }
-        return;
-      }
-      
-      // Not in iframe - try opening in new tab
-      const newWindow = window.open(authUrl, '_blank', 'noopener,noreferrer');
-      
-      if (!newWindow) {
-        // Popup blocked - use top-level navigation
-        toast({
-          title: "Pop-up blocked",
-          description: "Redirecting you now. Please allow pop-ups for this site.",
-        });
-        try {
-          if (window.top) {
-            window.top.location.assign(authUrl);
-          } else {
-            window.location.assign(authUrl);
-          }
-        } catch {
-          window.location.assign(authUrl);
-        }
-      } else {
-        setIsConnecting(false);
-      }
+      client.requestAccessToken();
     },
     onError: (error: Error) => {
       setIsConnecting(false);
@@ -154,11 +176,11 @@ export function GoogleSheetsOAuth() {
         {!isConnected && (
           <Button
             onClick={() => connectMutation.mutate()}
-            disabled={isConnecting}
+            disabled={isConnecting || !googleLoaded}
             className="gap-2"
           >
             <ExternalLink className="h-4 w-4" />
-            Connect Google Sheets
+            {isConnecting ? "Connecting..." : "Connect Google Sheets"}
           </Button>
         )}
 
