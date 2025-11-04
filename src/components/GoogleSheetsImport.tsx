@@ -27,7 +27,7 @@ import { Badge } from "@/components/ui/badge";
 interface Mapping {
   sheetColumn: string;
   dbField: string | null;
-  confidence: number;
+  confidence: number | string; // Accept both during migration
   transformation?: string;
   notes?: string;
   sampleValue?: string;
@@ -191,13 +191,22 @@ export function GoogleSheetsImport() {
     setMappings(newMappings);
   };
 
-  const getConfidenceBadge = (confidence: number) => {
-    if (confidence >= 80) {
-      return <Badge className="bg-green-500">High ({confidence}%)</Badge>;
-    } else if (confidence >= 50) {
-      return <Badge className="bg-yellow-500">Medium ({confidence}%)</Badge>;
+  const getConfidenceBadge = (confidence: number | string) => {
+    let numConfidence: number;
+    
+    if (typeof confidence === 'string') {
+      numConfidence = confidence === 'high' ? 90 : 
+                     confidence === 'medium' ? 60 : 30;
     } else {
-      return <Badge variant="destructive">Low ({confidence}%)</Badge>;
+      numConfidence = confidence;
+    }
+    
+    if (numConfidence >= 80) {
+      return <Badge className="bg-green-500">High ({numConfidence}%)</Badge>;
+    } else if (numConfidence >= 50) {
+      return <Badge className="bg-yellow-500">Medium ({numConfidence}%)</Badge>;
+    } else {
+      return <Badge variant="destructive">Low ({numConfidence}%)</Badge>;
     }
   };
 

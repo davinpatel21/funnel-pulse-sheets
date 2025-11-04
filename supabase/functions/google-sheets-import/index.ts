@@ -212,43 +212,30 @@ Available transformations:
 - "to_custom": Store in custom_fields jsonb
 - "default_other": Set default value to "other"
 
-Return a JSON object with this structure:
+CRITICAL: Return ONLY valid JSON with this EXACT structure (no markdown, use camelCase):
 {
-  "sheet_type": "leads|appointments|deals|calls",
+  "sheet_type": "appointments",
   "mappings": [
     {
-      "sheet_column": "Original Column Name",
-      "db_field": "target_field_name",
-      "transformation": "transformation_name",
-      "confidence": "high|medium|low"
-    }
-  ],
-  "warnings": ["Any issues or recommendations"],
-  "headers": ["all", "column", "names"],
-  "row_count": 123,
-  "sample_rows": [first 3 rows of data]
-}
-6. Identify potential data quality issues
-7. Return ONLY valid JSON, no markdown or explanations
-
-Return format:
-{
-  "mappings": [
-    {
-      "sheetColumn": "column name from sheet",
-      "dbField": "database field name or null or custom_fields",
-      "customFieldKey": "field_key_name (only if dbField is custom_fields)",
+      "sheetColumn": "Booking Time",
+      "dbField": "custom_fields",
+      "customFieldKey": "booking_time",
       "confidence": 95,
-      "transformation": "trim|lowercase_trim|clean_phone|map_to_enum|none",
-      "notes": "explanation if needed"
+      "transformation": "none"
     }
   ],
-  "warnings": ["list of potential issues"],
+  "warnings": ["Any data quality issues"],
   "suggestedDefaults": {
     "source": "other",
     "status": "new"
   }
-}`;
+}
+
+CRITICAL RULES:
+- Use camelCase: sheetColumn, dbField, customFieldKey (NOT snake_case)
+- confidence MUST be a NUMBER 0-100 (NOT string like "high")
+- If dbField is "custom_fields", you MUST include customFieldKey
+- Return ONLY the JSON object, no markdown code blocks`;
 
   const userPrompt = `Column headers from Google Sheet: ${JSON.stringify(headers)}
 
@@ -293,11 +280,29 @@ ${JSON.stringify(sampleRows, null, 2)}`;
     throw new Error('Failed to parse AI analysis');
   }
 
-  // Add sample data to mappings for preview
-  analysisResult.mappings = analysisResult.mappings.map((mapping: any) => ({
-    ...mapping,
-    sampleValue: sampleRows[0]?.[mapping.sheetColumn] || '',
-  }));
+  // Normalize AI response to match frontend interface (handle both snake_case and camelCase)
+  analysisResult.mappings = analysisResult.mappings.map((mapping: any) => {
+    // Handle both snake_case and camelCase
+    const sheetColumn = mapping.sheetColumn || mapping.sheet_column;
+    const dbField = mapping.dbField || mapping.db_field;
+    const customFieldKey = mapping.customFieldKey || mapping.custom_field_key;
+    
+    // Convert confidence string to number if needed
+    let confidence = mapping.confidence;
+    if (typeof confidence === 'string') {
+      confidence = confidence === 'high' ? 90 : 
+                   confidence === 'medium' ? 60 : 30;
+    }
+    
+    return {
+      sheetColumn,
+      dbField,
+      customFieldKey,
+      confidence,
+      transformation: mapping.transformation || 'none',
+      sampleValue: sampleRows[0]?.[sheetColumn] || '',
+    };
+  });
 
   const sheetId = extractSheetId(sheetUrl);
 
