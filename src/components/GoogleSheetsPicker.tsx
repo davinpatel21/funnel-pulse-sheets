@@ -5,14 +5,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileSpreadsheet, Sheet } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface GoogleSheetsPickerProps {
-  onSelect: (spreadsheetId: string, sheetName: string) => void;
+  onSelect: (spreadsheetId: string, sheetNames: string[]) => void;
 }
 
 export function GoogleSheetsPicker({ onSelect }: GoogleSheetsPickerProps) {
   const [selectedSpreadsheetId, setSelectedSpreadsheetId] = useState<string>("");
-  const [selectedSheetName, setSelectedSheetName] = useState<string>("");
+  const [selectedSheetNames, setSelectedSheetNames] = useState<string[]>([]);
 
   // Fetch user's spreadsheets
   const { data: spreadsheetsData, isLoading: loadingSpreadsheets } = useQuery({
@@ -52,13 +53,30 @@ export function GoogleSheetsPicker({ onSelect }: GoogleSheetsPickerProps) {
 
   const handleSpreadsheetChange = (spreadsheetId: string) => {
     setSelectedSpreadsheetId(spreadsheetId);
-    setSelectedSheetName("");
+    setSelectedSheetNames([]);
   };
 
-  const handleSheetChange = (sheetName: string) => {
-    setSelectedSheetName(sheetName);
-    if (selectedSpreadsheetId) {
-      onSelect(selectedSpreadsheetId, sheetName);
+  const handleSheetToggle = (sheetName: string) => {
+    setSelectedSheetNames(prev => 
+      prev.includes(sheetName) 
+        ? prev.filter(n => n !== sheetName)
+        : [...prev, sheetName]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (sheetsData?.sheets) {
+      setSelectedSheetNames(sheetsData.sheets.map((s: any) => s.title));
+    }
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedSheetNames([]);
+  };
+
+  const handleAnalyze = () => {
+    if (selectedSpreadsheetId && selectedSheetNames.length > 0) {
+      onSelect(selectedSpreadsheetId, selectedSheetNames);
     }
   };
 
@@ -98,29 +116,69 @@ export function GoogleSheetsPicker({ onSelect }: GoogleSheetsPickerProps) {
           )}
         </div>
 
-        {/* Sheet/Tab selector */}
+        {/* Sheet/Tab multi-selector */}
         {selectedSpreadsheetId && (
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Sheet/Tab</label>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">
+                Select Tabs ({selectedSheetNames.length} selected)
+              </label>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleSelectAll}
+                  disabled={loadingSheets}
+                >
+                  Select All
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleDeselectAll}
+                  disabled={loadingSheets || selectedSheetNames.length === 0}
+                >
+                  Deselect All
+                </Button>
+              </div>
+            </div>
+            
             {loadingSheets ? (
-              <Skeleton className="h-10 w-full" />
+              <div className="space-y-2">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </div>
             ) : (
-              <Select value={selectedSheetName} onValueChange={handleSheetChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a sheet" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sheetsData?.sheets?.map((sheet: any) => (
-                    <SelectItem key={sheet.sheetId} value={sheet.title}>
-                      <div className="flex items-center gap-2">
-                        <Sheet className="h-4 w-4" />
-                        <span>{sheet.title}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="border rounded-md divide-y max-h-[300px] overflow-y-auto">
+                {sheetsData?.sheets?.map((sheet: any) => {
+                  const isSelected = selectedSheetNames.includes(sheet.title);
+                  return (
+                    <label 
+                      key={sheet.sheetId}
+                      className="flex items-center gap-3 p-3 hover:bg-accent cursor-pointer transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => handleSheetToggle(sheet.title)}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      <Sheet className="h-4 w-4 text-muted-foreground" />
+                      <span className="flex-1">{sheet.title}</span>
+                    </label>
+                  );
+                })}
+              </div>
             )}
+
+            <Button 
+              onClick={handleAnalyze}
+              disabled={selectedSheetNames.length === 0}
+              className="w-full"
+            >
+              Analyze Selected Sheets
+            </Button>
           </div>
         )}
       </CardContent>
