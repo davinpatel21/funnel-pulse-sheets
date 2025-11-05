@@ -55,10 +55,14 @@ Deno.serve(async (req) => {
       }
       const sheetId = sheetIdMatch[1];
 
+      // Extract gid from URL for tab-specific syncing
+      const gidMatch = config.sheet_url.match(/[?#&]gid=([0-9]+)/);
+      const gid = gidMatch ? gidMatch[1] : null;
+      
       let csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
-      if (config.sheet_name) {
-        csvUrl += `&gid=0`; // Will be replaced with actual gid lookup if needed
-        console.log(`Syncing specific sheet tab: ${config.sheet_name}`);
+      if (gid) {
+        csvUrl += `&gid=${gid}`;
+        console.log(`Syncing specific sheet tab with gid=${gid} (${config.sheet_name || 'unnamed'})`);
       }
       const csvResponse = await fetch(csvUrl);
       if (!csvResponse.ok) {

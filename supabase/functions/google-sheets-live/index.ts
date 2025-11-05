@@ -49,7 +49,12 @@ serve(async (req) => {
     }
 
     // Fetch data from Google Sheets (CSV export)
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+    const gid = extractGid(config.sheet_url);
+    let csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+    if (gid) {
+      csvUrl += `&gid=${gid}`;
+      console.log(`Fetching specific tab with gid=${gid}`);
+    }
     const csvResponse = await fetch(csvUrl);
     if (!csvResponse.ok) {
       throw new Error('Failed to fetch sheet data. Make sure the sheet is publicly accessible.');
@@ -238,6 +243,11 @@ serve(async (req) => {
 
 function extractSheetId(sheetUrl: string): string | null {
   const match = sheetUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  return match ? match[1] : null;
+}
+
+function extractGid(sheetUrl: string): string | null {
+  const match = sheetUrl.match(/[?#&]gid=([0-9]+)/);
   return match ? match[1] : null;
 }
 

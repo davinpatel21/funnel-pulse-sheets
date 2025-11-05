@@ -69,6 +69,11 @@ function extractSheetId(sheetUrl: string): string | null {
   return match ? match[1] : null;
 }
 
+function extractGid(sheetUrl: string): string | null {
+  const match = sheetUrl.match(/[?#&]gid=([0-9]+)/);
+  return match ? match[1] : null;
+}
+
 async function fetchSheetData(sheetUrl: string, maxRows?: number): Promise<any[]> {
   const sheetId = extractSheetId(sheetUrl);
   if (!sheetId) {
@@ -76,7 +81,12 @@ async function fetchSheetData(sheetUrl: string, maxRows?: number): Promise<any[]
   }
 
   // Use CSV export endpoint (works for public sheets)
-  const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+  const gid = extractGid(sheetUrl);
+  let csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+  if (gid) {
+    csvUrl += `&gid=${gid}`;
+    console.log(`Fetching specific tab with gid=${gid}`);
+  }
   
   try {
     const response = await fetch(csvUrl);
