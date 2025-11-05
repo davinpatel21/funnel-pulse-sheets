@@ -49,18 +49,38 @@ export default function Calls() {
     },
   });
 
-  // Fetch live sheet calls
+  // Fetch sheet configs - fallback to appointments if no calls config
   const { data: configs } = useSheetConfigurations();
   const callsConfig = configs?.find(c => c.sheet_type === 'calls');
+  const appointmentsConfig = configs?.find(c => c.sheet_type === 'appointments');
+  const configToUse = callsConfig || appointmentsConfig;
   
   const { data: liveCalls, isLoading: isLoadingLive } = useQuery({
-    queryKey: ['live-calls', callsConfig?.id],
+    queryKey: ['live-calls', configToUse?.id],
     queryFn: async () => {
-      if (!callsConfig) return [];
+      if (!configToUse) return [];
       
       const { data } = await supabase.functions.invoke('google-sheets-live', {
-        body: { configuration_id: callsConfig.id }
+        body: { configuration_id: configToUse.id }
       });
+      
+      // If using appointments config, derive calls from completed appointments
+      if (configToUse.sheet_type === 'appointments') {
+        return (data?.data || [])
+          .filter((a: any) => a.status === 'completed' || a.custom_fields?.callStatus)
+          .map((a: any) => ({
+            id: `live-${a.email}-${a.scheduled_at}`,
+            lead_id: null,
+            duration_minutes: 30, // Default duration
+            was_live: !a.custom_fields?.callStatus?.toLowerCase().includes('voicemail'),
+            notes: a.notes || '',
+            caller_id: null,
+            appointment_id: null,
+            created_at: a.scheduled_at || new Date().toISOString(),
+            leads: { name: a.name, email: a.email },
+            isLive: true
+          }));
+      }
       
       // Transform live data to match call structure
       return (data?.data || []).map((record: any) => ({
@@ -76,7 +96,7 @@ export default function Calls() {
         isLive: true
       }));
     },
-    enabled: !!callsConfig,
+    enabled: !!configToUse,
     staleTime: 2 * 60 * 1000,
   });
 

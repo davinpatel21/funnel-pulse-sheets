@@ -49,18 +49,42 @@ export default function Deals() {
     },
   });
 
-  // Fetch live sheet deals
+  // Fetch sheet configs - fallback to appointments if no deals config
   const { data: configs } = useSheetConfigurations();
   const dealsConfig = configs?.find(c => c.sheet_type === 'deals');
+  const appointmentsConfig = configs?.find(c => c.sheet_type === 'appointments');
+  const configToUse = dealsConfig || appointmentsConfig;
   
   const { data: liveDeals, isLoading: isLoadingLive } = useQuery({
-    queryKey: ['live-deals', dealsConfig?.id],
+    queryKey: ['live-deals', configToUse?.id],
     queryFn: async () => {
-      if (!dealsConfig) return [];
+      if (!configToUse) return [];
       
       const { data } = await supabase.functions.invoke('google-sheets-live', {
-        body: { configuration_id: dealsConfig.id }
+        body: { configuration_id: configToUse.id }
       });
+      
+      // If using appointments config, derive deals from closed appointments
+      if (configToUse.sheet_type === 'appointments') {
+        return (data?.data || [])
+          .filter((a: any) => a.created_deal && a.revenue_amount)
+          .map((a: any) => ({
+            id: `live-${a.email}`,
+            lead_id: null,
+            revenue_amount: a.revenue_amount,
+            cash_collected: a.cash_collected || 0,
+            fees_amount: 0,
+            status: 'won',
+            setter_id: null,
+            closer_id: null,
+            appointment_id: null,
+            created_at: a.booked_at || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            closed_at: a.scheduled_at,
+            leads: { name: a.name, email: a.email },
+            isLive: true
+          }));
+      }
       
       // Transform live data to match deal structure
       return (data?.data || []).map((record: any) => ({
@@ -80,7 +104,7 @@ export default function Deals() {
         isLive: true
       }));
     },
-    enabled: !!dealsConfig,
+    enabled: !!configToUse,
     staleTime: 2 * 60 * 1000,
   });
 
