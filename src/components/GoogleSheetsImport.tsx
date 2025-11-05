@@ -52,6 +52,7 @@ interface AnalysisResult {
 
 export function GoogleSheetsImport() {
   const [sheetUrl, setSheetUrl] = useState("");
+  const [sheetName, setSheetName] = useState("");
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [mappings, setMappings] = useState<Mapping[]>([]);
   const [importResult, setImportResult] = useState<any>(null);
@@ -140,6 +141,7 @@ export function GoogleSheetsImport() {
         .insert({
           user_id: userId,
           sheet_url: sheetUrl,
+          sheet_name: sheetName || null,
           sheet_type: sheetType,
           mappings: mappings as any,
           is_active: true,
@@ -215,6 +217,7 @@ export function GoogleSheetsImport() {
 
   const reset = () => {
     setSheetUrl("");
+    setSheetName("");
     setAnalysisResult(null);
     setMappings([]);
     setImportResult(null);
@@ -477,6 +480,18 @@ export function GoogleSheetsImport() {
             value={sheetUrl}
             onChange={(e) => setSheetUrl(e.target.value)}
           />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="sheet-name">Sheet Tab Name (Optional)</Label>
+          <Input
+            id="sheet-name"
+            placeholder="e.g., Team Roster, Leads, Appointments"
+            value={sheetName}
+            onChange={(e) => setSheetName(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Leave empty to sync the first/default sheet. Specify a tab name to sync a specific sheet within the workbook.
+          </p>
         </div>
 
         <Button

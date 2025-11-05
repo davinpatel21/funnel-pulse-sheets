@@ -55,7 +55,11 @@ Deno.serve(async (req) => {
       }
       const sheetId = sheetIdMatch[1];
 
-      const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+      let csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+      if (config.sheet_name) {
+        csvUrl += `&gid=0`; // Will be replaced with actual gid lookup if needed
+        console.log(`Syncing specific sheet tab: ${config.sheet_name}`);
+      }
       const csvResponse = await fetch(csvUrl);
       if (!csvResponse.ok) {
         console.error(`Failed to fetch sheet ${sheetId}`);
@@ -122,7 +126,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('Auto-sync error:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

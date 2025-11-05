@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Trash2, Edit } from "lucide-react";
+import { Search, Edit2, Save, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Table,
@@ -14,14 +14,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -30,10 +22,10 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 
-export default function Team() {
+export default function TeamRoster() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingProfile, setEditingProfile] = useState<any>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState<any>({});
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -68,21 +60,27 @@ export default function Team() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["profiles"] });
-      setIsDialogOpen(false);
-      setEditingProfile(null);
-      toast({ title: "Team member updated successfully" });
+      setEditingId(null);
+      setEditValues({});
+      toast({ title: "Team member updated" });
     },
   });
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const profile = {
-      id: editingProfile?.id,
-      full_name: formData.get("full_name") as string,
-      role: formData.get("role") as string,
-    };
-    saveMutation.mutate(profile);
+  const startEdit = (profile: any) => {
+    setEditingId(profile.id);
+    setEditValues({
+      full_name: profile.full_name,
+      role: profile.role,
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditValues({});
+  };
+
+  const saveEdit = (id: string) => {
+    saveMutation.mutate({ id, ...editValues });
   };
 
   const getRoleBadgeVariant = (role: string) => {
@@ -121,55 +119,6 @@ export default function Team() {
         </div>
       </div>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Team Member</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <Label htmlFor="full_name">Full Name</Label>
-              <Input
-                id="full_name"
-                name="full_name"
-                defaultValue={editingProfile?.full_name}
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                defaultValue={editingProfile?.email}
-                disabled
-                className="bg-muted"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Email cannot be changed
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="role">Role</Label>
-              <Select name="role" defaultValue={editingProfile?.role} required>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="setter">Setter</SelectItem>
-                  <SelectItem value="closer">Closer</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Button type="submit" className="w-full">
-              Update Team Member
-            </Button>
-          </form>
-        </DialogContent>
-      </Dialog>
-
       <div className="border rounded-lg">
         <Table>
           <TableHeader>
@@ -198,28 +147,72 @@ export default function Team() {
               profiles?.map((profile) => (
                 <TableRow key={profile.id}>
                   <TableCell className="font-medium">
-                    {profile.full_name || "—"}
+                    {editingId === profile.id ? (
+                      <Input
+                        value={editValues.full_name}
+                        onChange={(e) =>
+                          setEditValues({ ...editValues, full_name: e.target.value })
+                        }
+                        className="h-8"
+                      />
+                    ) : (
+                      profile.full_name || "—"
+                    )}
                   </TableCell>
                   <TableCell>{profile.email}</TableCell>
                   <TableCell>
-                    <Badge variant={getRoleBadgeVariant(profile.role)}>
-                      {profile.role}
-                    </Badge>
+                    {editingId === profile.id ? (
+                      <Select
+                        value={editValues.role}
+                        onValueChange={(value) =>
+                          setEditValues({ ...editValues, role: value })
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-[120px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="setter">Setter</SelectItem>
+                          <SelectItem value="closer">Closer</SelectItem>
+                          <SelectItem value="admin">Admin</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Badge variant={getRoleBadgeVariant(profile.role)}>
+                        {profile.role}
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell>
                     {new Date(profile.created_at).toLocaleDateString()}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setEditingProfile(profile);
-                        setIsDialogOpen(true);
-                      }}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
+                    {editingId === profile.id ? (
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => saveEdit(profile.id)}
+                        >
+                          <Save className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={cancelEdit}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => startEdit(profile)}
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

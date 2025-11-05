@@ -502,6 +502,7 @@ export type Database = {
           is_active: boolean | null
           last_synced_at: string | null
           mappings: Json
+          sheet_name: string | null
           sheet_type: string
           sheet_url: string
           updated_at: string | null
@@ -513,6 +514,7 @@ export type Database = {
           is_active?: boolean | null
           last_synced_at?: string | null
           mappings: Json
+          sheet_name?: string | null
           sheet_type: string
           sheet_url: string
           updated_at?: string | null
@@ -524,6 +526,7 @@ export type Database = {
           is_active?: boolean | null
           last_synced_at?: string | null
           mappings?: Json
+          sheet_name?: string | null
           sheet_type?: string
           sheet_url?: string
           updated_at?: string | null
