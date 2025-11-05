@@ -109,6 +109,7 @@ export function GoogleSheetsImport() {
           sheetUrl: sheetUrl,
           mappings: mappings,
           defaults: analysisResult.analysis.suggestedDefaults,
+          sheetType: analysisResult.sheet_type,
         },
       });
 
@@ -117,9 +118,10 @@ export function GoogleSheetsImport() {
     },
     onSuccess: (data) => {
       setImportResult(data);
+      const entityName = analysisResult?.sheet_type === 'team' ? 'profiles' : 'leads';
       toast({
         title: "Import completed!",
-        description: `${data.imported} leads imported successfully`,
+        description: `${data.imported} ${entityName} imported successfully`,
       });
     },
     onError: (error: any) => {

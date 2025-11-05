@@ -245,8 +245,17 @@ async function transformRow(row: any, config: any, supabase: any, userId: string
   record.closer_name = tempData.closerName;
   record.setter_name = tempData.setterName;
 
-  if (!record.name || !record.email) {
-    return null;
+  // Validate based on sheet type
+  if (config.sheet_type === 'team') {
+    // For team sheets, only require email or full_name
+    if (!record.email && !record.full_name) {
+      return null;
+    }
+  } else {
+    // For other sheets, require name and email
+    if (!record.name || !record.email) {
+      return null;
+    }
   }
 
   if (!record.source) record.source = 'other';

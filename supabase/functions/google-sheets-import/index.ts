@@ -336,11 +336,28 @@ ${JSON.stringify(sampleRows, null, 2)}`;
   );
 }
 
+function mapToRoleEnum(value: string): string {
+  if (!value) return 'setter';
+  const normalized = value.toLowerCase().trim();
+  
+  if (normalized.includes('closer') || normalized.includes('sales')) return 'closer';
+  if (normalized.includes('setter') || normalized.includes('appointment')) return 'setter';
+  if (normalized.includes('admin') || normalized.includes('manager')) return 'admin';
+  
+  return 'setter';
+}
+
 async function executeImport(req: Request, supabase: any, userId: string) {
-  const { sheetUrl, mappings, defaults } = await req.json();
+  const { sheetUrl, mappings, defaults, sheetType } = await req.json();
 
   console.log('Executing import for:', sheetUrl);
+  console.log('Sheet type:', sheetType);
   console.log('Mappings:', mappings);
+
+  // Route to team import if sheet type is team
+  if (sheetType === 'team') {
+    return await executeTeamImport(req, supabase, userId, sheetUrl, mappings, defaults);
+  }
 
   // Fetch all rows
   const rows = await fetchSheetData(sheetUrl);
@@ -469,6 +486,145 @@ async function executeImport(req: Request, supabase: any, userId: string) {
   });
 
   console.log('Import completed:', results);
+
+  return new Response(
+    JSON.stringify(results),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
+
+async function executeTeamImport(req: Request, supabase: any, userId: string, sheetUrl: string, mappings: any[], defaults: any) {
+  console.log('Executing team/profiles import for:', sheetUrl);
+
+  const rows = await fetchSheetData(sheetUrl);
+  const dataRows = rows.slice(1);
+
+  console.log(`Processing ${dataRows.length} team rows`);
+
+  const results = {
+    imported: 0,
+    failed: 0,
+    errors: [] as any[],
+  };
+
+  const profilesToProcess = [];
+
+  for (let i = 0; i < dataRows.length; i++) {
+    const row = dataRows[i];
+    
+    try {
+      const profile: any = {};
+      const customFields: Record<string, any> = {};
+
+      for (const mapping of mappings) {
+        if (!mapping.dbField || mapping.dbField === 'ignore') continue;
+
+        let value = row[mapping.sheetColumn];
+
+        if (value) {
+          switch (mapping.transformation) {
+            case 'trim':
+              value = value.trim();
+              break;
+            case 'lowercase_trim':
+              value = value.toLowerCase().trim();
+              break;
+            case 'clean_phone':
+              value = value.replace(/[^\d+]/g, '');
+              break;
+          }
+        }
+
+        if (mapping.dbField === 'role') {
+          value = mapToRoleEnum(value);
+        }
+
+        if (mapping.dbField === 'phone') {
+          customFields.phone = value;
+        } else if (mapping.dbField === 'custom_fields') {
+          const fieldKey = mapping.customFieldKey || mapping.sheetColumn.toLowerCase().replace(/\s+/g, '_');
+          customFields[fieldKey] = value || null;
+        } else {
+          profile[mapping.dbField] = value || null;
+        }
+      }
+
+      if (Object.keys(customFields).length > 0) {
+        profile.sync_metadata = { ...customFields, importedFrom: 'google_sheets_import' };
+      } else {
+        profile.sync_metadata = { importedFrom: 'google_sheets_import' };
+      }
+
+      if (!profile.full_name || !profile.email) {
+        throw new Error('Missing required fields: full_name and email are required');
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(profile.email)) {
+        throw new Error('Invalid email format');
+      }
+
+      profilesToProcess.push(profile);
+    } catch (error) {
+      results.failed++;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      results.errors.push({
+        row: i + 2,
+        data: row,
+        error: errorMessage,
+      });
+    }
+  }
+
+  for (const profile of profilesToProcess) {
+    try {
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', profile.email)
+        .single();
+
+      if (existing) {
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update(profile)
+          .eq('id', existing.id);
+
+        if (updateError) throw updateError;
+        results.imported++;
+      } else {
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert(profile);
+
+        if (insertError) throw insertError;
+        results.imported++;
+      }
+    } catch (error) {
+      results.failed++;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      results.errors.push({
+        row: 'unknown',
+        data: profile,
+        error: errorMessage,
+      });
+    }
+  }
+
+  const sheetId = extractSheetId(sheetUrl);
+  await supabase.from('google_sheets_imports').insert({
+    user_id: userId,
+    sheet_url: sheetUrl,
+    sheet_id: sheetId,
+    field_mappings: { mappings, defaults },
+    sync_status: 'completed',
+    rows_imported: results.imported,
+    rows_failed: results.failed,
+    errors: results.errors,
+    last_sync_at: new Date().toISOString(),
+  });
+
+  console.log('Team import completed:', results);
 
   return new Response(
     JSON.stringify(results),
