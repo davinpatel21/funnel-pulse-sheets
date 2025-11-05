@@ -4,7 +4,7 @@ import { useSheetConfigurations } from "@/hooks/useSheetConfigurations";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Radio, Trash2, ExternalLink } from "lucide-react";
+import { Loader2, Radio, Trash2, ExternalLink, RefreshCw } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { LiveDataDebugger } from "./LiveDataDebugger";
 
@@ -12,6 +12,28 @@ export function ConnectedSheets() {
   const { data: configs, isLoading } = useSheetConfigurations();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('google-sheets-auto-sync');
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['sheet-configurations'] });
+      toast({ 
+        title: "Sync completed", 
+        description: data?.message || "Database updated with latest sheet data"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Sync failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const disconnectMutation = useMutation({
     mutationFn: async (configId: string) => {
@@ -50,13 +72,27 @@ export function ConnectedSheets() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Radio className="h-5 w-5 text-success" />
-          Connected Google Sheets
-        </CardTitle>
-        <CardDescription>
-          Manage your live Google Sheets connections. Data syncs automatically every 5 minutes.
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Radio className="h-5 w-5 text-success" />
+              Connected Google Sheets
+            </CardTitle>
+            <CardDescription>
+              Manage your live Google Sheets connections. Data syncs automatically every 5 minutes.
+            </CardDescription>
+          </div>
+          <Button 
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            variant="outline"
+            size="sm"
+            className="gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+            {syncMutation.isPending ? 'Syncing...' : 'Sync All'}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {!configs || configs.length === 0 ? (

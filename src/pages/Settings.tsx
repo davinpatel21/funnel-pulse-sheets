@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Copy, Plus, Trash2, Key } from "lucide-react";
+import { Copy, Plus, Trash2, Key, RefreshCw } from "lucide-react";
 import { GoogleSheetsImport } from "@/components/GoogleSheetsImport";
 import { ConnectedSheets } from "@/components/ConnectedSheets";
 import { GoogleSheetsOAuth } from "@/components/GoogleSheetsOAuth";
@@ -115,6 +115,28 @@ export default function Settings() {
     },
   });
 
+  const syncNowMutation = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('google-sheets-auto-sync');
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['sheet-configurations'] });
+      toast({ 
+        title: "Sync completed", 
+        description: data?.message || "Database updated with latest sheet data"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Sync failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast({ title: "Copied to clipboard" });
@@ -122,7 +144,18 @@ export default function Settings() {
 
   return (
     <div className="p-8 space-y-6">
-      <h1 className="text-3xl font-bold">Settings</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Settings</h1>
+        <Button 
+          onClick={() => syncNowMutation.mutate()}
+          disabled={syncNowMutation.isPending}
+          variant="outline"
+          className="gap-2"
+        >
+          <RefreshCw className={`h-4 w-4 ${syncNowMutation.isPending ? 'animate-spin' : ''}`} />
+          {syncNowMutation.isPending ? 'Syncing...' : 'Sync Now'}
+        </Button>
+      </div>
 
       <GoogleSheetsOAuth />
       <GoogleSheetsImport />
