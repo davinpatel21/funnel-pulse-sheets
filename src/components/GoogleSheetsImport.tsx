@@ -489,9 +489,15 @@ export function GoogleSheetsImport() {
             value={sheetName}
             onChange={(e) => setSheetName(e.target.value)}
           />
-          <p className="text-xs text-muted-foreground">
-            Leave empty to sync the first/default sheet. Specify a tab name to sync a specific sheet within the workbook.
-          </p>
+          <div className="text-xs text-muted-foreground space-y-1 mt-2 p-3 bg-muted/30 rounded border">
+            <p className="font-medium text-foreground">💡 Workbook Syncing Tips:</p>
+            <ul className="list-disc list-inside space-y-1 ml-2">
+              <li>Leave empty to sync the first/default sheet tab</li>
+              <li>Specify a tab name (e.g., "Appointments", "Team") to sync that specific tab</li>
+              <li><strong>Multi-tab support:</strong> Connect the same workbook URL multiple times with different tab names to sync multiple sheets (e.g., Appointments tab + Team tab)</li>
+              <li>Each tab creates a separate configuration that you can manage independently</li>
+            </ul>
+          </div>
         </div>
 
         <Button

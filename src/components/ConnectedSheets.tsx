@@ -1,10 +1,11 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { useSheetConfigurations } from "@/hooks/useSheetConfigurations";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Radio, Trash2, ExternalLink, RefreshCw } from "lucide-react";
+import { Loader2, Radio, Trash2, ExternalLink, RefreshCw, FileSpreadsheet } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { LiveDataDebugger } from "./LiveDataDebugger";
 
@@ -12,6 +13,18 @@ export function ConnectedSheets() {
   const { data: configs, isLoading } = useSheetConfigurations();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  
+  // Group configurations by sheet URL to show workbook organization
+  const groupByWorkbook = (configs: any[]) => {
+    const grouped = new Map<string, any[]>();
+    configs?.forEach(config => {
+      const existing = grouped.get(config.sheet_url) || [];
+      grouped.set(config.sheet_url, [...existing, config]);
+    });
+    return grouped;
+  };
+  
+  const groupedSheets = configs ? groupByWorkbook(configs) : new Map();
 
   const syncMutation = useMutation({
     mutationFn: async () => {
@@ -94,58 +107,76 @@ export function ConnectedSheets() {
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-6">
         {!configs || configs.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <p>No sheets connected yet.</p>
             <p className="text-sm mt-2">Use the import tool above to connect a sheet.</p>
           </div>
         ) : (
-          configs.map((config) => (
-            <div
-              key={config.id}
-              className="border rounded-lg p-4 space-y-3 hover:border-primary/50 transition-colors"
-            >
-              <div className="flex items-start justify-between">
-                <div className="space-y-1 flex-1">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                    <h4 className="font-semibold capitalize">{config.sheet_type} Sheet</h4>
-                  </div>
-                  <a
-                    href={config.sheet_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1 group"
-                  >
-                    <span className="truncate max-w-[400px]">{config.sheet_url}</span>
-                    <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </a>
-                  {config.last_synced_at && (
-                    <p className="text-xs text-muted-foreground">
-                      Last synced: {formatDistanceToNow(new Date(config.last_synced_at), { addSuffix: true })}
-                    </p>
-                  )}
+          Array.from(groupedSheets.entries()).map(([sheetUrl, sheetConfigs]) => (
+            <div key={sheetUrl} className="space-y-3">
+              {/* Workbook Header */}
+              {sheetConfigs.length > 1 && (
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground border-b pb-2">
+                  <FileSpreadsheet className="h-4 w-4" />
+                  <span>Workbook with {sheetConfigs.length} tabs</span>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => disconnectMutation.mutate(config.id)}
-                  disabled={disconnectMutation.isPending}
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                >
-                  {disconnectMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-              <div className="text-xs text-muted-foreground bg-muted/50 rounded p-2">
-                {(config.mappings as any[]).length} fields mapped
-              </div>
+              )}
               
-              <LiveDataDebugger configId={config.id} />
+              {/* Individual Sheet Configs */}
+              {sheetConfigs.map((config) => (
+                <div
+                  key={config.id}
+                  className="border rounded-lg p-4 space-y-3 hover:border-primary/50 transition-colors"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1 flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+                        <h4 className="font-semibold capitalize">{config.sheet_type} Sheet</h4>
+                        {config.sheet_name && (
+                          <Badge variant="outline" className="text-xs">
+                            Tab: {config.sheet_name}
+                          </Badge>
+                        )}
+                      </div>
+                      <a
+                        href={config.sheet_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1 group"
+                      >
+                        <span className="truncate max-w-[400px]">{config.sheet_url}</span>
+                        <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </a>
+                      {config.last_synced_at && (
+                        <p className="text-xs text-muted-foreground">
+                          Last synced: {formatDistanceToNow(new Date(config.last_synced_at), { addSuffix: true })}
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => disconnectMutation.mutate(config.id)}
+                      disabled={disconnectMutation.isPending}
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    >
+                      {disconnectMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <div className="text-xs text-muted-foreground bg-muted/50 rounded p-2">
+                    {(config.mappings as any[]).length} fields mapped
+                  </div>
+                  
+                  <LiveDataDebugger configId={config.id} />
+                </div>
+              ))}
             </div>
           ))
         )}

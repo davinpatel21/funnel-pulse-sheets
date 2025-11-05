@@ -42,8 +42,11 @@ Deno.serve(async (req) => {
         throw new Error('Invalid user token');
       }
 
-      // Store user ID in state parameter
-      const state = btoa(JSON.stringify({ userId: user.id }));
+      // Capture origin from the requesting frontend
+      const redirectOrigin = req.headers.get('origin') || req.headers.get('referer')?.split('/').slice(0, 3).join('/');
+
+      // Store user ID and redirect origin in state parameter
+      const state = btoa(JSON.stringify({ userId: user.id, redirectOrigin }));
 
       const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
       authUrl.searchParams.set('client_id', clientId);
@@ -69,8 +72,8 @@ Deno.serve(async (req) => {
         throw new Error('Missing code or state parameter');
       }
 
-      // Decode state to get user ID
-      const { userId } = JSON.parse(atob(state));
+      // Decode state to get user ID and redirect origin
+      const { userId, redirectOrigin } = JSON.parse(atob(state));
 
       // Exchange code for tokens
       const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
@@ -112,11 +115,26 @@ Deno.serve(async (req) => {
         throw new Error('Failed to store credentials');
       }
 
+      // Determine redirect URL with priority: FRONTEND_URL > redirectOrigin > fallback
+      const frontendUrl = Deno.env.get('FRONTEND_URL');
+      let finalRedirectUrl: string;
+      
+      if (frontendUrl) {
+        finalRedirectUrl = `${frontendUrl.replace(/\/$/, '')}/settings?oauth=success`;
+      } else if (redirectOrigin) {
+        finalRedirectUrl = `${redirectOrigin.replace(/\/$/, '')}/settings?oauth=success`;
+      } else {
+        // Fallback to original behavior
+        finalRedirectUrl = `${supabaseUrl.replace('.supabase.co', '.lovable.app')}/settings?oauth=success`;
+      }
+
+      console.log('OAuth successful, redirecting to:', finalRedirectUrl);
+
       // Redirect back to settings page with success message
       return new Response(null, {
         status: 302,
         headers: {
-          'Location': `${supabaseUrl.replace('.supabase.co', '.lovable.app')}/settings?oauth=success`,
+          'Location': finalRedirectUrl,
         },
       });
     }

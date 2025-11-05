@@ -91,6 +91,8 @@ Deno.serve(async (req) => {
 
           if (config.sheet_type === 'appointments') {
             await syncAppointmentRow(transformedRecord, rowNumber, config.id, supabase);
+          } else if (config.sheet_type === 'team' || config.sheet_type === 'profiles') {
+            await syncTeamRow(transformedRecord, rowNumber, config.id, supabase);
           } else {
             await upsertRecord(config.sheet_type, transformedRecord, rowNumber, config.id, supabase);
           }
@@ -395,6 +397,69 @@ async function resolveProfile(fullName: string, supabase: any): Promise<string |
     .single();
 
   return newProfile.id;
+}
+
+async function syncTeamRow(record: any, rowNumber: number, configId: string, supabase: any) {
+  // For team sheets, we expect: full_name (required), email (required), role, phone
+  if (!record.email && !record.full_name) {
+    console.log(`Skipping team row ${rowNumber}: missing both email and full_name`);
+    return;
+  }
+
+  const syncMeta = {
+    sheet_config_id: configId,
+    sheet_row_number: rowNumber,
+    last_synced_at: new Date().toISOString()
+  };
+
+  // Check if profile exists by email (primary) or full_name (fallback)
+  let existing = null;
+  if (record.email) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('email', record.email)
+      .single();
+    existing = data;
+  }
+
+  if (!existing && record.full_name) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .ilike('full_name', record.full_name)
+      .single();
+    existing = data;
+  }
+
+  const profileData = {
+    full_name: record.full_name || existing?.full_name || 'Unknown',
+    email: record.email || existing?.email || `${(record.full_name || 'user').replace(/\s+/g, '.').toLowerCase()}@placeholder.com`,
+    role: record.role || existing?.role || 'setter',
+    sync_metadata: syncMeta
+  };
+
+  if (existing) {
+    // Check if locally modified
+    if (existing.sync_metadata?.modified_locally) {
+      console.log(`Skipping locally modified profile (row ${rowNumber})`);
+      return;
+    }
+    
+    await supabase
+      .from('profiles')
+      .update(profileData)
+      .eq('id', existing.id);
+    
+    console.log(`Updated profile: ${profileData.full_name}`);
+  } else {
+    // Create new profile
+    await supabase
+      .from('profiles')
+      .insert(profileData);
+    
+    console.log(`Created new profile: ${profileData.full_name}`);
+  }
 }
 
 async function upsertRecord(tableName: string, record: any, rowNumber: number, configId: string, supabase: any) {
