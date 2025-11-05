@@ -306,9 +306,13 @@ export function GoogleSheetsImport() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Review Field Mappings</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            Review Field Mappings
+            {analysisResult.sheet_type === 'team' && <Badge variant="outline">👥 Team Roster</Badge>}
+            {analysisResult.sheet_type === 'appointments' && <Badge variant="outline">📅 Appointments</Badge>}
+            {analysisResult.sheet_type === 'leads' && <Badge variant="outline">📊 Leads</Badge>}
+          </CardTitle>
           <CardDescription>
-            AI has detected this as an <Badge variant="secondary" className="mx-1">{sheetType}</Badge> sheet.
             Review and adjust mappings before importing {analysisResult.totalRows} rows.
           </CardDescription>
         </CardHeader>
@@ -384,6 +388,19 @@ export function GoogleSheetsImport() {
                             <SelectItem value="closer_name">Closer Assigned (Lookup)</SelectItem>
                             <SelectItem value="setter_name">Setter Assigned (Lookup)</SelectItem>
                           </SelectGroup>
+
+                          {analysisResult?.sheet_type === 'team' && (
+                            <>
+                              <SelectSeparator />
+                              <SelectGroup>
+                                <SelectLabel className="text-xs font-semibold">👥 Team/Profiles Fields</SelectLabel>
+                                <SelectItem value="full_name">Full Name *</SelectItem>
+                                <SelectItem value="email">Email *</SelectItem>
+                                <SelectItem value="role">Role (Closer/Setter/Admin)</SelectItem>
+                                <SelectItem value="phone">Phone</SelectItem>
+                              </SelectGroup>
+                            </>
+                          )}
                           
                           <SelectSeparator />
                           <SelectGroup>

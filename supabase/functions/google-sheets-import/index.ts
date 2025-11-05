@@ -177,8 +177,11 @@ CRITICAL: THIS SHEET STRUCTURE IS THE ABSOLUTE STANDARD FOR ALL MAPPINGS.
 The user's sheet contains these EXACT columns that map to a complete sales funnel:
 
 SHEET TYPE DETECTION:
-If you see columns like "Booking Time", "Appointment Date", "Call Status", "Revenue", "Closer Assigned" → this is "appointments" type
-This single sheet tracks the ENTIRE sales funnel from lead → appointment → call → deal in one view.
+1. If you see columns like "Booking Time", "Appointment Date", "Call Status", "Revenue", "Closer Assigned" → this is "appointments" type
+   This single sheet tracks the ENTIRE sales funnel from lead → appointment → call → deal in one view.
+2. If you see columns like "Full Name", "Email", "Role", "Phone" WITHOUT appointment/booking fields → this is "team" type
+   This sheet tracks team members/profiles (closers, setters, admins).
+3. Otherwise → this is "leads" type
 
 EXACT COLUMN MAPPINGS (match these precisely):
 
@@ -216,6 +219,13 @@ DEAL FIELDS (Only create deal if "Call Status" = "Closed"):
 - Link to: lead_id, closer_id, setter_id, appointment_id
 - Set: deals.status = 'won'
 
+TEAM/PROFILES FIELDS (for sheet_type: "team"):
+- "Full Name" / "Name" → dbField: "full_name" (profiles.full_name) - required
+- "Email" → dbField: "email" (profiles.email) - required
+- "Role" / "Position" / "Title" → dbField: "role" (profiles.role) - map to enum: 'setter', 'closer', 'admin'
+- "Phone" / "Phone Number" → dbField: "phone" (profiles.phone)
+- "Joined" / "Member Since" / "Start Date" → store in custom_fields
+
 CRITICAL RULES:
 1. Return ONLY valid JSON (no markdown code blocks)
 2. Use camelCase for all keys: sheetColumn, dbField, customFieldKey
@@ -228,7 +238,7 @@ CRITICAL RULES:
 
 RETURN THIS EXACT JSON STRUCTURE:
 {
-  "sheet_type": "appointments",
+  "sheet_type": "appointments" | "team" | "leads",
   "mappings": [
     {
       "sheetColumn": "Booking Time",

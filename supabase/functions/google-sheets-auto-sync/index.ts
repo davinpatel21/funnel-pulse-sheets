@@ -403,6 +403,17 @@ async function resolveProfile(fullName: string, supabase: any): Promise<string |
   return newProfile.id;
 }
 
+function mapToRoleEnum(value: string): string {
+  if (!value) return 'setter';
+  const normalized = value.toLowerCase().trim();
+  
+  if (normalized.includes('closer') || normalized.includes('sales')) return 'closer';
+  if (normalized.includes('setter') || normalized.includes('appointment')) return 'setter';
+  if (normalized.includes('admin') || normalized.includes('manager')) return 'admin';
+  
+  return 'setter'; // default
+}
+
 async function syncTeamRow(record: any, rowNumber: number, configId: string, supabase: any) {
   // For team sheets, we expect: full_name (required), email (required), role, phone
   if (!record.email && !record.full_name) {
@@ -439,7 +450,7 @@ async function syncTeamRow(record: any, rowNumber: number, configId: string, sup
   const profileData = {
     full_name: record.full_name || existing?.full_name || 'Unknown',
     email: record.email || existing?.email || `${(record.full_name || 'user').replace(/\s+/g, '.').toLowerCase()}@placeholder.com`,
-    role: record.role || existing?.role || 'setter',
+    role: mapToRoleEnum(record.role || existing?.role || 'setter'),
     sync_metadata: syncMeta
   };
 
