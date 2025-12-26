@@ -17,6 +17,8 @@ import Team from "./pages/Team";
 import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+import logo from "@/assets/vantage-point-logo.png";
+import { useDashboardMetrics } from "@/hooks/useDashboardMetrics";
 
 const queryClient = new QueryClient();
 
@@ -57,6 +59,36 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+// Header component with logo and status
+const AppHeader = () => {
+  const { data: metrics } = useDashboardMetrics({});
+  
+  return (
+    <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="flex h-14 items-center gap-4 px-4">
+        <SidebarTrigger />
+        <div className="flex items-center gap-3">
+          <img 
+            src={logo} 
+            alt="Vantage Point" 
+            className="h-8 w-8"
+          />
+          <div className="hidden sm:block">
+            <h1 className="text-lg font-semibold text-foreground leading-tight">Vantage Point</h1>
+            <p className="text-xs text-muted-foreground">DFY Sales Funnel Dashboard</p>
+          </div>
+        </div>
+        <div className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-success/10 border border-success/20">
+          <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+          <span className="text-xs font-medium text-success">
+            {metrics?.isLiveMode ? 'Live Tracking' : 'Live Tracking'}
+          </span>
+        </div>
+      </div>
+    </header>
+  );
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -72,20 +104,20 @@ const App = () => (
                 <SidebarProvider>
                   <div className="flex min-h-screen w-full">
                     <AppSidebar />
-                    <main className="flex-1">
-                      <div className="border-b p-4">
-                        <SidebarTrigger />
+                    <main className="flex-1 flex flex-col">
+                      <AppHeader />
+                      <div className="flex-1">
+                        <Routes>
+                          <Route path="/" element={<Index />} />
+                          <Route path="/leads" element={<Leads />} />
+                          <Route path="/appointments" element={<Appointments />} />
+                          <Route path="/calls" element={<Calls />} />
+                          <Route path="/deals" element={<Deals />} />
+                          <Route path="/team" element={<Team />} />
+                          <Route path="/settings" element={<Settings />} />
+                          <Route path="*" element={<NotFound />} />
+                        </Routes>
                       </div>
-                      <Routes>
-                        <Route path="/" element={<Index />} />
-                        <Route path="/leads" element={<Leads />} />
-                        <Route path="/appointments" element={<Appointments />} />
-                        <Route path="/calls" element={<Calls />} />
-                        <Route path="/deals" element={<Deals />} />
-                        <Route path="/team" element={<Team />} />
-                        <Route path="/settings" element={<Settings />} />
-                        <Route path="*" element={<NotFound />} />
-                      </Routes>
                     </main>
                   </div>
                 </SidebarProvider>
