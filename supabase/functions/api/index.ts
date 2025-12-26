@@ -1,9 +1,35 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { z } from 'https://deno.land/x/zod@v3.22.4/mod.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api-key',
 };
+
+// Input validation schemas
+const createLeadSchema = z.object({
+  name: z.string().min(1).max(100).trim(),
+  email: z.string().email().max(255).toLowerCase(),
+  phone: z.string().max(20).optional().nullable(),
+  source: z.enum(['youtube', 'instagram', 'discord', 'email', 'vendor_doc', 'sms', 'facebook', 'tiktok', 'referral', 'other']).default('other'),
+  status: z.enum(['new', 'contacted', 'qualified', 'unqualified']).default('new'),
+  notes: z.string().max(1000).optional().nullable(),
+  utm_source: z.string().max(255).optional().nullable(),
+  custom_fields: z.record(z.any()).optional().nullable(),
+}).strict();
+
+const updateLeadSchema = z.object({
+  name: z.string().min(1).max(100).trim().optional(),
+  email: z.string().email().max(255).toLowerCase().optional(),
+  phone: z.string().max(20).optional().nullable(),
+  source: z.enum(['youtube', 'instagram', 'discord', 'email', 'vendor_doc', 'sms', 'facebook', 'tiktok', 'referral', 'other']).optional(),
+  status: z.enum(['new', 'contacted', 'qualified', 'unqualified']).optional(),
+  notes: z.string().max(1000).optional().nullable(),
+  utm_source: z.string().max(255).optional().nullable(),
+  custom_fields: z.record(z.any()).optional().nullable(),
+  setter_id: z.string().uuid().optional().nullable(),
+  closer_id: z.string().uuid().optional().nullable(),
+}).strict();
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -63,6 +89,16 @@ Deno.serve(async (req) => {
 
     // GET /api/leads/:id - Get single lead
     if (req.method === 'GET' && resource === 'leads' && id) {
+      // Validate UUID format
+      const uuidSchema = z.string().uuid();
+      const idResult = uuidSchema.safeParse(id);
+      if (!idResult.success) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid lead ID format' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       const { data, error } = await supabaseClient
         .from('leads')
         .select('*')
@@ -77,10 +113,21 @@ Deno.serve(async (req) => {
 
     // POST /api/leads - Create lead
     if (req.method === 'POST' && resource === 'leads') {
-      const body = await req.json();
+      const rawBody = await req.json();
+      
+      const parseResult = createLeadSchema.safeParse(rawBody);
+      if (!parseResult.success) {
+        return new Response(
+          JSON.stringify({ error: 'Validation failed', details: parseResult.error.errors }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const validatedData = parseResult.data;
+      
       const { data, error } = await supabaseClient
         .from('leads')
-        .insert([body])
+        .insert([validatedData])
         .select()
         .single();
 
@@ -103,10 +150,31 @@ Deno.serve(async (req) => {
 
     // PATCH /api/leads/:id - Update lead
     if (req.method === 'PATCH' && resource === 'leads' && id) {
-      const body = await req.json();
+      // Validate UUID format
+      const uuidSchema = z.string().uuid();
+      const idResult = uuidSchema.safeParse(id);
+      if (!idResult.success) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid lead ID format' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const rawBody = await req.json();
+      
+      const parseResult = updateLeadSchema.safeParse(rawBody);
+      if (!parseResult.success) {
+        return new Response(
+          JSON.stringify({ error: 'Validation failed', details: parseResult.error.errors }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const validatedData = parseResult.data;
+      
       const { data, error } = await supabaseClient
         .from('leads')
-        .update(body)
+        .update(validatedData)
         .eq('id', id)
         .select()
         .single();
@@ -129,6 +197,16 @@ Deno.serve(async (req) => {
 
     // DELETE /api/leads/:id - Delete lead
     if (req.method === 'DELETE' && resource === 'leads' && id) {
+      // Validate UUID format
+      const uuidSchema = z.string().uuid();
+      const idResult = uuidSchema.safeParse(id);
+      if (!idResult.success) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid lead ID format' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       const { error } = await supabaseClient
         .from('leads')
         .delete()

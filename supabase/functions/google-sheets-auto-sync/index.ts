@@ -399,12 +399,14 @@ async function resolveProfile(fullName: string, supabase: any): Promise<string |
     return existing.id;
   }
 
+  // SECURITY: New profiles get default 'setter' role
+  // Role changes must be done through admin interface
   const { data: newProfile } = await supabase
     .from('profiles')
     .insert({
       full_name: fullName,
       email: `${fullName.replace(/\s+/g, '.').toLowerCase()}@placeholder.com`,
-      role: 'closer'
+      role: 'setter' // Default role only, no escalation possible
     })
     .select('id')
     .single();
@@ -456,12 +458,19 @@ async function syncTeamRow(record: any, rowNumber: number, configId: string, sup
     existing = data;
   }
 
+  // SECURITY: Do NOT sync 'role' field from sheets to prevent privilege escalation
+  // Role changes must be done through the admin interface with proper authorization
   const profileData = {
     full_name: record.full_name || existing?.full_name || 'Unknown',
     email: record.email || existing?.email || `${(record.full_name || 'user').replace(/\s+/g, '.').toLowerCase()}@placeholder.com`,
-    role: mapToRoleEnum(record.role || existing?.role || 'setter'),
+    // NOTE: role is intentionally omitted - only sync name/email/metadata
     sync_metadata: syncMeta
   };
+
+  // Log if role was in sheet but ignored
+  if (record.role) {
+    console.log(`Ignoring role "${record.role}" from sheet (row ${rowNumber}) - role changes require admin action`);
+  }
 
   if (existing) {
     // Check if locally modified
