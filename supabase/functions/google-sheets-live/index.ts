@@ -55,6 +55,7 @@ serve(async (req) => {
       csvUrl += `&gid=${gid}`;
       console.log(`Fetching specific tab with gid=${gid}`);
     }
+    
     const csvResponse = await fetch(csvUrl);
     if (!csvResponse.ok) {
       throw new Error('Failed to fetch sheet data. Make sure the sheet is publicly accessible.');
@@ -65,152 +66,85 @@ serve(async (req) => {
     
     const rows = parseCsv(csvText);
     console.log(`Parsed ${rows.length} rows from CSV`);
-    if (rows.length > 0) {
-      console.log('First row sample:', JSON.stringify(rows[0]));
-    }
 
-    // Apply mappings to transform data
-    const transformedData = rows.map(row => {
-      const record: any = { user_id: user.id };
-      const tempData: any = {}; // Temp storage for fields that need combining
-      
-      config.mappings.forEach((mapping: any) => {
-        const value = row[mapping.sheetColumn];
-        
-        if (!value || mapping.dbField === 'ignore') return;
+    // Transform data based on sheet type using canonical schema
+    const transformedData = rows.map((row, index) => {
+      // Keep track of original row number for write-back (1-indexed, +2 for header and 0-index)
+      const record: any = { _rowNumber: index + 2 };
 
-        let transformedValue = value;
-
-        // Apply transformations
-        switch (mapping.transformation) {
-          case 'trim':
-            transformedValue = value.trim();
-            break;
-          case 'lowercase_trim':
-            transformedValue = value.toLowerCase().trim();
-            break;
-          case 'clean_phone':
-            transformedValue = value.replace(/[^0-9+]/g, '');
-            break;
-          case 'skip_if_placeholder':
-            // Skip "IN CRM" or similar placeholder values
-            if (value.toUpperCase().includes('IN CRM') || value.toUpperCase() === 'N/A') return;
-            break;
-          case 'parse_currency':
-            // Parse currency values: "$1,200" → 1200
-            transformedValue = parseFloat(value.replace(/[$,]/g, '')) || 0;
-            break;
-          case 'map_to_enum':
-            if (mapping.dbField === 'source') {
-              transformedValue = mapToSourceEnum(value);
-            } else if (mapping.dbField === 'status') {
-              transformedValue = mapToStatusEnum(value);
-            }
-            break;
-        }
-
-        // Store date/time components temporarily for combining
-        if (mapping.customFieldKey === 'appointmentDate' || 
-            mapping.customFieldKey === 'appointmentTime' || 
-            mapping.customFieldKey === 'rawDate') {
-          tempData[mapping.customFieldKey] = transformedValue;
-          return; // Don't add to record yet
-        }
-
-        // Parse single date fields
-        if (mapping.dbField === 'booked_at' || mapping.dbField === 'scheduled_at') {
-          try {
-            const date = new Date(value);
-            if (!isNaN(date.getTime())) {
-              transformedValue = date.toISOString();
-            }
-          } catch (e) {
-            console.warn(`Failed to parse date for ${mapping.dbField}: ${value}`);
-          }
-        }
-
-        // Store names for later profile lookup
-        if (mapping.customFieldKey === 'closerName' || mapping.customFieldKey === 'setterName') {
-          if (!record.custom_fields) record.custom_fields = {};
-          record.custom_fields[mapping.customFieldKey] = transformedValue;
-          return;
-        }
-
-        // Route to appropriate field
-        if (mapping.dbField === 'custom_fields') {
-          if (!record.custom_fields) record.custom_fields = {};
-          record.custom_fields[mapping.customFieldKey] = transformedValue;
-        } else {
-          record[mapping.dbField] = transformedValue;
-        }
+      // Map all columns from the row directly
+      Object.keys(row).forEach(key => {
+        const normalizedKey = normalizeColumnName(key);
+        record[normalizedKey] = row[key];
       });
 
-      // COMBINE DATE FIELDS if we have them stored
-      if (tempData.appointmentDate && (tempData.appointmentTime || tempData.rawDate)) {
-        try {
-          const dateStr = `${tempData.appointmentDate} ${tempData.appointmentTime || tempData.rawDate}`;
-          const combinedDate = new Date(dateStr);
-          if (!isNaN(combinedDate.getTime())) {
-            record.scheduled_at = combinedDate.toISOString();
-          }
-        } catch (e) {
-          console.warn('Failed to combine date fields:', tempData);
-        }
-      }
+      // Apply sheet-type specific transformations
+      switch (config.sheet_type) {
+        case 'team':
+          record.team_member_id = record.team_member_id || record.id || `team-${index}`;
+          record.full_name = record.full_name || `${record.first_name || ''} ${record.last_name || ''}`.trim() || record.name;
+          record.role = normalizeRole(record.role);
+          record.active = record.active !== 'false' && record.is_deleted !== 'true';
+          break;
 
-      // DERIVE STATUS from "Call Status" column
-      const callStatusValue = row['Call Status'] || row['Status'] || row['Result'];
-      if (callStatusValue) {
-        const normalized = callStatusValue.toLowerCase().trim();
-        
-        if (normalized === 'closed' || normalized.includes('won')) {
-          record.status = 'completed';
-          record.created_deal = true; // Flag to create deal
-        } else if (normalized === 'no close' || normalized.includes('no close')) {
-          record.status = 'completed';
-          record.created_deal = false;
-        } else if (normalized.includes('no show') || normalized === 'dns' || normalized === 'did not show') {
-          record.status = 'no_show';
-        } else if (normalized.includes('cancelled')) {
-          record.status = 'cancelled';
-        } else {
-          record.status = 'scheduled';
-        }
-        
-        // Store raw call status
-        if (!record.custom_fields) record.custom_fields = {};
-        record.custom_fields.callStatus = callStatusValue;
-      }
+        case 'leads':
+          record.lead_id = record.lead_id || record.id || `lead-${index}`;
+          record.full_name = record.full_name || record.name;
+          record.status = normalizeLeadStatus(record.status);
+          break;
 
-      // Store revenue/cash for potential deal creation
-      const revenueValue = row['Revenue'];
-      const cashValue = row['Cash Collected'];
-      const paymentPlatform = row['Payment Platform'];
-      
-      if (record.created_deal && (revenueValue || cashValue)) {
-        record.revenue_amount = parseFloat(revenueValue?.replace(/[$,]/g, '') || '0');
-        record.cash_collected = parseFloat(cashValue?.replace(/[$,]/g, '') || '0');
-        record.payment_platform = paymentPlatform;
-      }
+        case 'appointments':
+          record.appointment_id = record.appointment_id || record.id || `appt-${index}`;
+          record.lead_name = record.lead_name || record.name || record.full_name;
+          record.lead_email = record.lead_email || record.email;
+          record.scheduled_for = record.scheduled_for || record.scheduled_at || record.booking_time || combineDateTimeFields(record);
+          record.setter_name = record.setter_name || record.setter;
+          record.closer_name = record.closer_name || record.closer;
+          record.status = normalizeAppointmentStatus(record.status || record.call_status);
+          break;
 
-      // Apply defaults
-      if (!record.source) record.source = 'other';
-      if (!record.status) record.status = config.sheet_type === 'appointments' ? 'scheduled' : 'new';
+        case 'calls':
+          record.call_id = record.call_id || record.id || `call-${index}`;
+          record.lead_name = record.lead_name || record.name || record.full_name;
+          record.lead_email = record.lead_email || record.email;
+          record.call_time = record.call_time || record.created_at || record.date;
+          record.setter_name = record.setter_name || record.setter;
+          record.closer_name = record.closer_name || record.closer;
+          record.status = normalizeCallStatus(record.status || record.call_status);
+          record.duration_seconds = parseInt(record.duration_seconds || record.duration || '0') || 0;
+          record.call_notes = record.call_notes || record.notes;
+          break;
+
+        case 'deals':
+          record.deal_id = record.deal_id || record.id || `deal-${index}`;
+          record.lead_name = record.lead_name || record.name || record.full_name;
+          record.lead_email = record.lead_email || record.email;
+          record.closer_name = record.closer_name || record.closer;
+          record.stage = normalizeDealStage(record.stage || record.status);
+          record.amount = parseFloat(String(record.amount || record.revenue || record.revenue_amount || '0').replace(/[$,]/g, '')) || 0;
+          record.cash_collected = parseFloat(String(record.cash_collected || '0').replace(/[$,]/g, '')) || 0;
+          record.currency = record.currency || 'USD';
+          record.close_date = record.close_date || record.closed_at;
+          break;
+      }
 
       return record;
     });
 
-    console.log(`Transformed ${transformedData.length} records`);
-    if (transformedData.length > 0) {
-      console.log('First transformed record:', JSON.stringify(transformedData[0]));
-    }
+    console.log(`Transformed ${transformedData.length} records for sheet_type: ${config.sheet_type}`);
 
-    // Validate transformed data
+    // Filter out deleted/empty records
     const validRecords = transformedData.filter(record => {
-      if (!record.name || !record.email) {
-        console.warn('Skipping invalid record (missing name or email):', JSON.stringify(record));
-        return false;
+      // Skip if marked as deleted
+      if (record.is_deleted === 'true' || record.is_deleted === true) return false;
+      
+      // For most types, require at least name or email
+      if (config.sheet_type !== 'team') {
+        const hasName = record.full_name || record.lead_name || record.name;
+        const hasEmail = record.email || record.lead_email;
+        if (!hasName && !hasEmail) return false;
       }
+      
       return true;
     });
 
@@ -231,7 +165,7 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error in google-sheets-live:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     return new Response(
@@ -251,11 +185,37 @@ function extractGid(sheetUrl: string): string | null {
   return match ? match[1] : null;
 }
 
+function normalizeColumnName(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '');
+}
+
+function combineDateTimeFields(record: any): string | null {
+  // Try to combine common date/time field patterns
+  const dateField = record.appointment_date || record.date || record.booking_date;
+  const timeField = record.appointment_time || record.time || record.booking_time;
+  
+  if (dateField && timeField) {
+    try {
+      const combined = new Date(`${dateField} ${timeField}`);
+      if (!isNaN(combined.getTime())) {
+        return combined.toISOString();
+      }
+    } catch {
+      // Fall through
+    }
+  }
+  
+  return dateField || null;
+}
+
 function parseCsv(csvText: string): any[] {
   const lines = csvText.split('\n');
   if (lines.length === 0) return [];
 
-  // RFC 4180-compliant CSV parser
   const parseRow = (line: string): string[] => {
     const values: string[] = [];
     let current = '';
@@ -267,7 +227,7 @@ function parseCsv(csvText: string): any[] {
       
       if (char === '"' && inQuotes && nextChar === '"') {
         current += '"';
-        i++; // Skip next quote
+        i++;
       } else if (char === '"') {
         inQuotes = !inQuotes;
       } else if (char === ',' && !inQuotes) {
@@ -285,7 +245,7 @@ function parseCsv(csvText: string): any[] {
   const rows = [];
 
   for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue; // Skip empty lines
+    if (!lines[i].trim()) continue;
     
     const values = parseRow(lines[i]);
     const row: any = {};
@@ -300,21 +260,52 @@ function parseCsv(csvText: string): any[] {
   return rows;
 }
 
-function mapToSourceEnum(value: string): string {
-  const normalized = value.toLowerCase().trim();
-  if (normalized.includes('website') || normalized.includes('web')) return 'website';
-  if (normalized.includes('referral') || normalized.includes('refer')) return 'referral';
-  if (normalized.includes('social') || normalized.includes('facebook') || normalized.includes('instagram')) return 'social_media';
-  if (normalized.includes('ad') || normalized.includes('paid') || normalized.includes('google ads')) return 'paid_ad';
+function normalizeRole(role: string): string {
+  const r = (role || '').toLowerCase().trim();
+  if (r.includes('admin') || r.includes('manager')) return 'admin';
+  if (r.includes('close')) return 'closer';
+  if (r.includes('set')) return 'setter';
   return 'other';
 }
 
-function mapToStatusEnum(value: string): string {
-  const normalized = value.toLowerCase().trim();
-  if (normalized.includes('new')) return 'new';
-  if (normalized.includes('contacted')) return 'contacted';
-  if (normalized.includes('qualified')) return 'qualified';
-  if (normalized.includes('unqualified')) return 'unqualified';
-  if (normalized.includes('lost')) return 'lost';
+function normalizeLeadStatus(status: string): string {
+  const s = (status || '').toLowerCase().trim();
+  if (s.includes('new')) return 'new';
+  if (s.includes('contact')) return 'contacted';
+  if (s.includes('book')) return 'booked';
+  if (s.includes('no') && s.includes('show')) return 'no_show';
+  if (s.includes('show')) return 'showed';
+  if (s.includes('won') || s.includes('close') || s.includes('deal')) return 'won';
+  if (s.includes('lost') || s.includes('dead')) return 'lost';
+  if (s.includes('unqual')) return 'unqualified';
   return 'new';
+}
+
+function normalizeAppointmentStatus(status: string): string {
+  const s = (status || '').toLowerCase().trim();
+  if (s.includes('book') || s.includes('schedul')) return 'booked';
+  if (s.includes('resch')) return 'rescheduled';
+  if (s.includes('cancel')) return 'cancelled';
+  if (s.includes('no') && s.includes('show')) return 'no_show';
+  if (s.includes('complete') || s.includes('done') || s.includes('showed') || s.includes('closed')) return 'completed';
+  return 'booked';
+}
+
+function normalizeCallStatus(status: string): string {
+  const s = (status || '').toLowerCase().trim();
+  if (s.includes('connect') || s.includes('live') || s.includes('answer')) return 'connected';
+  if (s.includes('no') && s.includes('answer')) return 'no_answer';
+  if (s.includes('voice') || s.includes('vm')) return 'voicemail';
+  if (s.includes('resch')) return 'rescheduled';
+  if (s.includes('complete') || s.includes('done')) return 'completed';
+  return 'connected';
+}
+
+function normalizeDealStage(stage: string): string {
+  const s = (stage || '').toLowerCase().trim();
+  if (s.includes('won') || s.includes('close')) return 'won';
+  if (s.includes('lost') || s.includes('dead')) return 'lost';
+  if (s.includes('refund')) return 'refund';
+  if (s.includes('charge')) return 'chargeback';
+  return 'pipeline';
 }
