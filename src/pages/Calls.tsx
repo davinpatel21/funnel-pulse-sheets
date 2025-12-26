@@ -1,10 +1,7 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { useSheetConfigurations } from "@/hooks/useSheetConfigurations";
-import { Button } from "@/components/ui/button";
-import { Plus, Trash2 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { useLiveSheetData } from "@/hooks/useLiveSheetData";
+import { Input } from "@/components/ui/input";
+import { Search } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -13,196 +10,103 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { SheetDataBanner } from "@/components/SheetDataBanner";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Link } from "react-router-dom";
+import { format, parseISO, isValid } from "date-fns";
 
 export default function Calls() {
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
+  const [searchTerm, setSearchTerm] = useState("");
+  const { data: calls, isLoading, refetch, lastSyncedAt, sheetUrl, isConfigured } = useLiveSheetData('calls');
 
-  // Fetch database calls
-  const { data: dbCalls, isLoading: isLoadingDb } = useQuery({
-    queryKey: ["calls"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("calls")
-        .select("*, leads(name, email)")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
+  const filteredCalls = calls.filter((call: any) => {
+    if (!searchTerm) return true;
+    const search = searchTerm.toLowerCase();
+    return (
+      call.lead_name?.toLowerCase().includes(search) ||
+      call.lead_email?.toLowerCase().includes(search) ||
+      call.closer_name?.toLowerCase().includes(search)
+    );
   });
 
-  // Fetch sheet configs - fallback to appointments if no calls config
-  const { data: configs } = useSheetConfigurations();
-  const callsConfig = configs?.find(c => c.sheet_type === 'calls');
-  const appointmentsConfig = configs?.find(c => c.sheet_type === 'appointments');
-  const configToUse = callsConfig || appointmentsConfig;
-  
-  const { data: liveCalls, isLoading: isLoadingLive } = useQuery({
-    queryKey: ['live-calls', configToUse?.id],
-    queryFn: async () => {
-      if (!configToUse) return [];
-      
-      const { data } = await supabase.functions.invoke('google-sheets-live', {
-        body: { configuration_id: configToUse.id }
-      });
-      
-      // If using appointments config, derive calls from completed appointments
-      if (configToUse.sheet_type === 'appointments') {
-        return (data?.data || [])
-          .filter((a: any) => a.status === 'completed' || a.custom_fields?.callStatus)
-          .map((a: any) => ({
-            id: `live-${a.email}-${a.scheduled_at}`,
-            lead_id: null,
-            duration_minutes: 30, // Default duration
-            was_live: !a.custom_fields?.callStatus?.toLowerCase().includes('voicemail'),
-            notes: a.notes || '',
-            caller_id: null,
-            appointment_id: null,
-            created_at: a.scheduled_at || new Date().toISOString(),
-            leads: { name: a.name, email: a.email },
-            isLive: true
-          }));
-      }
-      
-      // Transform live data to match call structure
-      return (data?.data || []).map((record: any) => ({
-        id: `live-${record.email || record.name}`,
-        lead_id: null,
-        duration_minutes: record.custom_fields?.duration || record.custom_fields?.call_duration,
-        was_live: record.custom_fields?.was_live !== 'voicemail',
-        notes: record.notes || '',
-        caller_id: null,
-        appointment_id: null,
-        created_at: record.custom_fields?.call_time || new Date().toISOString(),
-        leads: { name: record.name, email: record.email },
-        isLive: true
-      }));
-    },
-    enabled: !!configToUse,
-    staleTime: 2 * 60 * 1000,
-  });
-
-  // Merge database + live calls
-  const calls = [...(dbCalls || []), ...(liveCalls || [])];
-  const isLoading = isLoadingDb || isLoadingLive;
-
-  const { data: leads } = useQuery({
-    queryKey: ["leads-list"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("leads").select("id, name, email");
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("calls").delete().eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["calls"] });
-      toast({ title: "Call deleted" });
-    },
-  });
-
-  const saveMutation = useMutation({
-    mutationFn: async (call: any) => {
-      const { error } = await supabase.from("calls").insert([call]);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["calls"] });
-      setIsDialogOpen(false);
-      toast({ title: "Call logged" });
-    },
-  });
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const call = {
-      lead_id: formData.get("lead_id") as string,
-      duration_minutes: parseInt(formData.get("duration_minutes") as string),
-      was_live: formData.get("was_live") === "on",
-      notes: formData.get("notes") as string,
-    };
-    saveMutation.mutate(call);
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status) {
+      case "connected":
+      case "completed":
+        return "default";
+      case "no_answer":
+      case "voicemail":
+        return "secondary";
+      case "rescheduled":
+        return "outline";
+      default:
+        return "outline";
+    }
   };
+
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return "—";
+    try {
+      const date = parseISO(dateStr);
+      if (!isValid(date)) return dateStr;
+      return format(date, "MMM d, yyyy h:mm a");
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const formatDuration = (seconds: number) => {
+    if (!seconds || seconds === 0) return "—";
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins > 0) {
+      return `${mins}m ${secs}s`;
+    }
+    return `${secs}s`;
+  };
+
+  if (!isConfigured && !isLoading) {
+    return (
+      <div className="p-8">
+        <h1 className="text-3xl font-bold mb-6">Calls</h1>
+        <Alert>
+          <AlertTitle>No Calls Sheet Configured</AlertTitle>
+          <AlertDescription>
+            Connect a Google Sheet with call data to view calls.{" "}
+            <Link to="/settings" className="text-primary hover:underline">
+              Go to Settings
+            </Link>
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
 
   return (
     <div className="p-8">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Calls</h1>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Log Call
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Log New Call</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label htmlFor="lead_id">Lead</Label>
-                <Select name="lead_id" required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a lead" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {leads?.map((lead) => (
-                      <SelectItem key={lead.id} value={lead.id}>
-                        {lead.name} - {lead.email}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="duration_minutes">Duration (minutes)</Label>
-                <Input
-                  id="duration_minutes"
-                  name="duration_minutes"
-                  type="number"
-                  min="0"
-                  defaultValue="0"
-                />
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox id="was_live" name="was_live" defaultChecked />
-                <Label htmlFor="was_live">Was Live (not voicemail)</Label>
-              </div>
-              <div>
-                <Label htmlFor="notes">Notes</Label>
-                <Input id="notes" name="notes" />
-              </div>
-              <Button type="submit" className="w-full">
-                Log Call
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+      </div>
+
+      <SheetDataBanner
+        sheetUrl={sheetUrl}
+        lastSyncedAt={lastSyncedAt}
+        onRefresh={refetch}
+        isLoading={isLoading}
+        entityName="calls"
+      />
+
+      <div className="mb-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search calls..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9"
+          />
+        </div>
       </div>
 
       <div className="border rounded-lg">
@@ -210,38 +114,58 @@ export default function Calls() {
           <TableHeader>
             <TableRow>
               <TableHead>Lead</TableHead>
+              <TableHead>Call Time</TableHead>
               <TableHead>Duration</TableHead>
+              <TableHead>Closer</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Recording</TableHead>
               <TableHead>Notes</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center">Loading...</TableCell>
+                <TableCell colSpan={7} className="text-center">
+                  Loading from Google Sheets...
+                </TableCell>
               </TableRow>
-            ) : calls?.length === 0 ? (
+            ) : filteredCalls.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center">No calls logged</TableCell>
+                <TableCell colSpan={7} className="text-center">
+                  No calls found
+                </TableCell>
               </TableRow>
             ) : (
-              calls?.map((call) => (
-                <TableRow key={call.id}>
-                  <TableCell className="font-medium">{call.leads?.name}</TableCell>
-                  <TableCell>{call.duration_minutes} min</TableCell>
-                  <TableCell>{call.was_live ? "Live" : "Voicemail"}</TableCell>
-                  <TableCell>{call.notes}</TableCell>
-                  <TableCell>{new Date(call.created_at).toLocaleString()}</TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => deleteMutation.mutate(call.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+              filteredCalls.map((call: any) => (
+                <TableRow key={call.call_id}>
+                  <TableCell>
+                    <div>
+                      <p className="font-medium">{call.lead_name || "Unknown"}</p>
+                      <p className="text-sm text-muted-foreground">{call.lead_email}</p>
+                    </div>
+                  </TableCell>
+                  <TableCell>{formatDate(call.call_time)}</TableCell>
+                  <TableCell>{formatDuration(call.duration_seconds)}</TableCell>
+                  <TableCell>{call.closer_name || "—"}</TableCell>
+                  <TableCell>
+                    <Badge variant={getStatusBadgeVariant(call.status)}>
+                      {call.status?.replace("_", " ")}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {call.recording_url ? (
+                      <a 
+                        href={call.recording_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        🎥 View
+                      </a>
+                    ) : "—"}
+                  </TableCell>
+                  <TableCell className="max-w-[200px] truncate">
+                    {call.call_notes || "—"}
                   </TableCell>
                 </TableRow>
               ))

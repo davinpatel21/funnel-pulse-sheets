@@ -1,11 +1,7 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { useSheetConfigurations } from "@/hooks/useSheetConfigurations";
-import { Button } from "@/components/ui/button";
+import { useLiveSheetData } from "@/hooks/useLiveSheetData";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Trash2, Edit } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { Search } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -14,243 +10,95 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { SheetDataBanner } from "@/components/SheetDataBanner";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Link } from "react-router-dom";
+import { format, parseISO, isValid } from "date-fns";
 
 export default function Appointments() {
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingAppointment, setEditingAppointment] = useState<any>(null);
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
+  const [searchTerm, setSearchTerm] = useState("");
+  const { data: appointments, isLoading, refetch, lastSyncedAt, sheetUrl, isConfigured } = useLiveSheetData('appointments');
 
-  // Fetch database appointments
-  const { data: dbAppointments, isLoading: isLoadingDb } = useQuery({
-    queryKey: ["appointments"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("appointments")
-        .select("*, leads(name, email)")
-        .order("scheduled_at", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
+  const filteredAppointments = appointments.filter((appt: any) => {
+    if (!searchTerm) return true;
+    const search = searchTerm.toLowerCase();
+    return (
+      appt.lead_name?.toLowerCase().includes(search) ||
+      appt.lead_email?.toLowerCase().includes(search) ||
+      appt.setter_name?.toLowerCase().includes(search) ||
+      appt.closer_name?.toLowerCase().includes(search)
+    );
   });
 
-  // Fetch live sheet appointments
-  const { data: configs } = useSheetConfigurations();
-  const appointmentsConfig = configs?.find(c => c.sheet_type === 'appointments');
-  
-  const { data: liveAppointments, isLoading: isLoadingLive } = useQuery({
-    queryKey: ['live-appointments', appointmentsConfig?.id],
-    queryFn: async () => {
-      if (!appointmentsConfig) return [];
-      
-      const { data } = await supabase.functions.invoke('google-sheets-live', {
-        body: { configuration_id: appointmentsConfig.id }
-      });
-      
-      // Transform live data to match appointment structure
-      return (data?.data || []).map((record: any) => ({
-        id: `live-${record.email || record.name}`,
-        lead_id: null,
-        booked_at: record.booked_at || null,
-        scheduled_at: record.scheduled_at || record.custom_fields?.scheduled_for || record.custom_fields?.booking_time,
-        status: record.status || 'scheduled',
-        notes: record.notes || '',
-        pipeline: record.pipeline || null,
-        recording_url: record.recording_url || null,
-        post_call_form_url: record.post_call_form_url || null,
-        closer_form_status: record.closer_form_status || null,
-        setter_id: null,
-        closer_id: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        leads: { name: record.name, email: record.email },
-        isLive: true
-      }));
-    },
-    enabled: !!appointmentsConfig,
-    staleTime: 2 * 60 * 1000,
-  });
-
-  // Merge database + live appointments
-  const appointments = [...(dbAppointments || []), ...(liveAppointments || [])];
-  const isLoading = isLoadingDb || isLoadingLive;
-
-  const { data: leads } = useQuery({
-    queryKey: ["leads-list"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("leads").select("id, name, email");
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  const { data: profiles } = useQuery({
-    queryKey: ["profiles-list"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("profiles").select("id, full_name, role").in("role", ["setter", "closer"]);
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("appointments").delete().eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["appointments"] });
-      toast({ title: "Appointment deleted" });
-    },
-  });
-
-  const saveMutation = useMutation({
-    mutationFn: async (appointment: any) => {
-      if (appointment.id) {
-        const { error } = await supabase.from("appointments").update(appointment).eq("id", appointment.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("appointments").insert([appointment]);
-        if (error) throw error;
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["appointments"] });
-      setIsDialogOpen(false);
-      setEditingAppointment(null);
-      toast({ title: editingAppointment ? "Appointment updated" : "Appointment created" });
-    },
-  });
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const setterId = formData.get("setter_id") as string;
-    const closerId = formData.get("closer_id") as string;
-    const appointment = {
-      id: editingAppointment?.id,
-      lead_id: formData.get("lead_id") as string,
-      scheduled_at: formData.get("scheduled_at") as string,
-      status: formData.get("status") as string,
-      notes: formData.get("notes") as string,
-      setter_id: setterId === "none" ? null : setterId,
-      closer_id: closerId === "none" ? null : closerId,
-    };
-    saveMutation.mutate(appointment);
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status) {
+      case "completed":
+        return "default";
+      case "booked":
+        return "secondary";
+      case "no_show":
+      case "cancelled":
+        return "destructive";
+      case "rescheduled":
+        return "outline";
+      default:
+        return "outline";
+    }
   };
+
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return "—";
+    try {
+      const date = parseISO(dateStr);
+      if (!isValid(date)) return dateStr;
+      return format(date, "MMM d, yyyy h:mm a");
+    } catch {
+      return dateStr;
+    }
+  };
+
+  if (!isConfigured && !isLoading) {
+    return (
+      <div className="p-8">
+        <h1 className="text-3xl font-bold mb-6">Appointments</h1>
+        <Alert>
+          <AlertTitle>No Appointments Sheet Configured</AlertTitle>
+          <AlertDescription>
+            Connect a Google Sheet with appointment data to view appointments.{" "}
+            <Link to="/settings" className="text-primary hover:underline">
+              Go to Settings
+            </Link>
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
 
   return (
     <div className="p-8">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Appointments</h1>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => setEditingAppointment(null)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Appointment
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editingAppointment ? "Edit Appointment" : "Add New Appointment"}</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label htmlFor="lead_id">Lead</Label>
-                <Select name="lead_id" defaultValue={editingAppointment?.lead_id} required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a lead" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {leads?.map((lead) => (
-                      <SelectItem key={lead.id} value={lead.id}>
-                        {lead.name} - {lead.email}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="scheduled_at">Scheduled Date & Time</Label>
-                <Input
-                  id="scheduled_at"
-                  name="scheduled_at"
-                  type="datetime-local"
-                  defaultValue={editingAppointment?.scheduled_at?.slice(0, 16)}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="status">Status</Label>
-                <Select name="status" defaultValue={editingAppointment?.status || "scheduled"}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="scheduled">Scheduled</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                    <SelectItem value="no_show">No Show</SelectItem>
-                    <SelectItem value="cancelled">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="setter_id">Setter</Label>
-                <Select name="setter_id" defaultValue={editingAppointment?.setter_id || "none"}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a setter (optional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {profiles?.filter(p => p.role === "setter").map((profile) => (
-                      <SelectItem key={profile.id} value={profile.id}>
-                        {profile.full_name || profile.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="closer_id">Closer</Label>
-                <Select name="closer_id" defaultValue={editingAppointment?.closer_id || "none"}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a closer (optional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {profiles?.filter(p => p.role === "closer").map((profile) => (
-                      <SelectItem key={profile.id} value={profile.id}>
-                        {profile.full_name || profile.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="notes">Notes</Label>
-                <Input id="notes" name="notes" defaultValue={editingAppointment?.notes} />
-              </div>
-              <Button type="submit" className="w-full">
-                {editingAppointment ? "Update" : "Create"} Appointment
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+      </div>
+
+      <SheetDataBanner
+        sheetUrl={sheetUrl}
+        lastSyncedAt={lastSyncedAt}
+        onRefresh={refetch}
+        isLoading={isLoading}
+        entityName="appointments"
+      />
+
+      <div className="mb-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search appointments..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9"
+          />
+        </div>
       </div>
 
       <div className="border rounded-lg">
@@ -258,66 +106,45 @@ export default function Appointments() {
           <TableHeader>
             <TableRow>
               <TableHead>Lead</TableHead>
-              <TableHead>Booked At</TableHead>
-              <TableHead>Scheduled</TableHead>
-              <TableHead>Pipeline</TableHead>
+              <TableHead>Scheduled For</TableHead>
+              <TableHead>Setter</TableHead>
+              <TableHead>Closer</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Recording</TableHead>
               <TableHead>Notes</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center">Loading...</TableCell>
+                <TableCell colSpan={6} className="text-center">
+                  Loading from Google Sheets...
+                </TableCell>
               </TableRow>
-            ) : appointments?.length === 0 ? (
+            ) : filteredAppointments.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center">No appointments found</TableCell>
+                <TableCell colSpan={6} className="text-center">
+                  No appointments found
+                </TableCell>
               </TableRow>
             ) : (
-              appointments?.map((appointment) => (
-                <TableRow key={appointment.id}>
-                  <TableCell className="font-medium">{appointment.leads?.name}</TableCell>
+              filteredAppointments.map((appt: any) => (
+                <TableRow key={appt.appointment_id}>
                   <TableCell>
-                    {appointment.booked_at ? new Date(appointment.booked_at).toLocaleDateString() : '-'}
+                    <div>
+                      <p className="font-medium">{appt.lead_name || "Unknown"}</p>
+                      <p className="text-sm text-muted-foreground">{appt.lead_email}</p>
+                    </div>
                   </TableCell>
-                  <TableCell>{new Date(appointment.scheduled_at).toLocaleString()}</TableCell>
-                  <TableCell>{appointment.pipeline || '-'}</TableCell>
+                  <TableCell>{formatDate(appt.scheduled_for)}</TableCell>
+                  <TableCell>{appt.setter_name || "—"}</TableCell>
+                  <TableCell>{appt.closer_name || "—"}</TableCell>
                   <TableCell>
-                    <span className="capitalize">{appointment.status.replace("_", " ")}</span>
+                    <Badge variant={getStatusBadgeVariant(appt.status)}>
+                      {appt.status?.replace("_", " ")}
+                    </Badge>
                   </TableCell>
-                  <TableCell>
-                    {appointment.recording_url ? (
-                      <a href={appointment.recording_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                        🎥 View
-                      </a>
-                    ) : '-'}
-                  </TableCell>
-                  <TableCell>{appointment.notes}</TableCell>
-                  <TableCell className="text-right">
-                    {!appointment.isLive && (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setEditingAppointment(appointment);
-                            setIsDialogOpen(true);
-                          }}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => deleteMutation.mutate(appointment.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </>
-                    )}
+                  <TableCell className="max-w-[200px] truncate">
+                    {appt.notes || "—"}
                   </TableCell>
                 </TableRow>
               ))

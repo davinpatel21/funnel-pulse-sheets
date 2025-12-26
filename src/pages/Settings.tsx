@@ -6,10 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Copy, Plus, Trash2, Key, RefreshCw } from "lucide-react";
+import { Copy, Plus, Trash2, RefreshCw, FileSpreadsheet } from "lucide-react";
 import { GoogleSheetsImport } from "@/components/GoogleSheetsImport";
 import { ConnectedSheets } from "@/components/ConnectedSheets";
 import { GoogleSheetsOAuth } from "@/components/GoogleSheetsOAuth";
+import { useSyncStatus } from "@/hooks/useSyncStatus";
 import {
   Dialog,
   DialogContent,
@@ -25,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export default function Settings() {
   const [isApiKeyDialogOpen, setIsApiKeyDialogOpen] = useState(false);

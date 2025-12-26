@@ -18,7 +18,7 @@ import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import logo from "@/assets/vantage-point-logo.png";
-import { useDashboardMetrics } from "@/hooks/useDashboardMetrics";
+import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
 
 const queryClient = new QueryClient();
 
@@ -61,8 +61,6 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 // Header component with logo and status
 const AppHeader = () => {
-  const { data: metrics } = useDashboardMetrics({});
-  
   return (
     <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-14 items-center gap-4 px-4">
@@ -78,11 +76,8 @@ const AppHeader = () => {
             <p className="text-xs text-muted-foreground">DFY Sales Funnel Dashboard</p>
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-success/10 border border-success/20">
-          <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-          <span className="text-xs font-medium text-success">
-            {metrics?.isLiveMode ? 'Live Tracking' : 'Live Tracking'}
-          </span>
+        <div className="ml-auto">
+          <SyncStatusIndicator />
         </div>
       </div>
     </header>
