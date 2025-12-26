@@ -71,15 +71,7 @@ export function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarContent>
-        <div className="p-4">
-          <img 
-            src="/src/assets/vantage-point-logo.png" 
-            alt="Vantage Point" 
-            className="h-8"
-          />
-        </div>
-
+      <SidebarContent className="pt-2">
         <SidebarGroup>
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
