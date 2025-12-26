@@ -34,6 +34,7 @@ export default function Settings() {
   const [newApiKey, setNewApiKey] = useState<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { status, hasCredentials, hasSheetConfigs } = useSyncStatus();
 
   const { data: apiKeys } = useQuery({
     queryKey: ["api-keys"],
@@ -125,14 +126,42 @@ export default function Settings() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['sheet-configurations'] });
+      queryClient.invalidateQueries({ queryKey: ['live-sheet-data'] });
       toast({ 
         title: "Sync completed", 
-        description: data?.message || "Database updated with latest sheet data"
+        description: data?.message || "Data refreshed from Google Sheets"
       });
     },
     onError: (error: any) => {
       toast({
         title: "Sync failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const createSheetMutation = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('google-sheets-create', {
+        body: { sheetName: `Sales Tracker - ${new Date().toLocaleDateString()}` }
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['sheet-configurations'] });
+      toast({ 
+        title: "Sheet created successfully!", 
+        description: `Created "${data.message}" - Opening in new tab...`
+      });
+      if (data.spreadsheetUrl) {
+        window.open(data.spreadsheetUrl, '_blank');
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to create sheet",
         description: error.message,
         variant: "destructive",
       });
@@ -155,9 +184,34 @@ export default function Settings() {
           className="gap-2"
         >
           <RefreshCw className={`h-4 w-4 ${syncNowMutation.isPending ? 'animate-spin' : ''}`} />
-          {syncNowMutation.isPending ? 'Syncing...' : 'Sync Now'}
+          {syncNowMutation.isPending ? 'Syncing...' : 'Refresh Data'}
         </Button>
       </div>
+
+      {/* Quick Setup Card - Show when not fully configured */}
+      {hasCredentials && !hasSheetConfigs && (
+        <Card className="border-primary/50 bg-primary/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5" />
+              Create Your Tracker Sheet
+            </CardTitle>
+            <CardDescription>
+              Google Sheets is connected! Create a new sheet with all the tabs you need (Team, Leads, Appointments, Calls, Deals).
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button 
+              onClick={() => createSheetMutation.mutate()}
+              disabled={createSheetMutation.isPending}
+              className="gap-2"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              {createSheetMutation.isPending ? 'Creating...' : 'Create New Tracker Sheet'}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <GoogleSheetsOAuth />
       <GoogleSheetsImport />
