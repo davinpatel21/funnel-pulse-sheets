@@ -80,21 +80,6 @@ export function AppSidebar() {
           />
         </div>
 
-        {/* User Info Section */}
-        <div className="px-4 py-3">
-          <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
-            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-              <User className="h-4 w-4 text-primary" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{userName}</p>
-              <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
-            </div>
-          </div>
-        </div>
-
-        <Separator className="mx-4" />
-
         <SidebarGroup>
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -119,18 +104,33 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <Separator className="mx-4 mt-auto" />
+        <div className="mt-auto">
+          <Separator className="mx-4" />
 
-        {/* Logout Button */}
-        <div className="p-4">
-          <Button
-            variant="outline"
-            className="w-full justify-start"
-            onClick={handleLogout}
-          >
-            <LogOut className="h-4 w-4 mr-2" />
-            Log Out
-          </Button>
+          {/* User Info Section */}
+          <div className="px-4 py-3">
+            <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
+              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <User className="h-4 w-4 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{userName}</p>
+                <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Logout Button */}
+          <div className="px-4 pb-4">
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={handleLogout}
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              Log Out
+            </Button>
+          </div>
         </div>
       </SidebarContent>
     </Sidebar>
