@@ -3,9 +3,6 @@ project_id = "aehmfsvlueiqbznmrzxe"
 [functions.api]
 verify_jwt = false
 
-[functions.webhook-receiver]
-verify_jwt = false
-
 [functions.google-sheets-import]
 verify_jwt = true
 
