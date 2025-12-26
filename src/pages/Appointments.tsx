@@ -12,8 +12,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { SheetDataBanner } from "@/components/SheetDataBanner";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Link } from "react-router-dom";
+import { SheetsNotConnected } from "@/components/SheetsNotConnected";
 import { format, parseISO, isValid } from "date-fns";
 
 export default function Appointments() {
@@ -59,20 +58,7 @@ export default function Appointments() {
   };
 
   if (!isConfigured && !isLoading) {
-    return (
-      <div className="p-8">
-        <h1 className="text-3xl font-bold mb-6">Appointments</h1>
-        <Alert>
-          <AlertTitle>No Appointments Sheet Configured</AlertTitle>
-          <AlertDescription>
-            Connect a Google Sheet with appointment data to view appointments.{" "}
-            <Link to="/settings" className="text-primary hover:underline">
-              Go to Settings
-            </Link>
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
+    return <SheetsNotConnected entityName="appointments" />;
   }
 
   return (

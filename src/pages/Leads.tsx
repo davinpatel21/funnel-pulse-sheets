@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useLiveSheetData } from "@/hooks/useLiveSheetData";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
 import {
@@ -13,8 +12,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { SheetDataBanner } from "@/components/SheetDataBanner";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Link } from "react-router-dom";
+import { SheetsNotConnected } from "@/components/SheetsNotConnected";
 
 export default function Leads() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -46,20 +44,7 @@ export default function Leads() {
   };
 
   if (!isConfigured && !isLoading) {
-    return (
-      <div className="p-8">
-        <h1 className="text-3xl font-bold mb-6">Leads</h1>
-        <Alert>
-          <AlertTitle>No Leads Sheet Configured</AlertTitle>
-          <AlertDescription>
-            Connect a Google Sheet with lead data to view your leads.{" "}
-            <Link to="/settings" className="text-primary hover:underline">
-              Go to Settings
-            </Link>
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
+    return <SheetsNotConnected entityName="leads" />;
   }
 
   return (
