@@ -50,6 +50,7 @@ export type Database = {
       api_keys: {
         Row: {
           api_key: string
+          api_key_hash: string | null
           created_at: string
           id: string
           is_active: boolean | null
@@ -60,6 +61,7 @@ export type Database = {
         }
         Insert: {
           api_key: string
+          api_key_hash?: string | null
           created_at?: string
           id?: string
           is_active?: boolean | null
@@ -70,6 +72,7 @@ export type Database = {
         }
         Update: {
           api_key?: string
+          api_key_hash?: string | null
           created_at?: string
           id?: string
           is_active?: boolean | null
@@ -642,6 +645,11 @@ export type Database = {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      hash_api_key: { Args: { key: string }; Returns: string }
+      verify_api_key: {
+        Args: { plain_key: string; stored_hash: string }
         Returns: boolean
       }
     }
