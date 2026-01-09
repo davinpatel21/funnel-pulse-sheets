@@ -30,12 +30,12 @@ serve(async (req) => {
 
     const { configuration_id } = await req.json();
 
-    // Fetch the configuration
+    // Fetch the configuration (shared across all authenticated team members)
     const { data: config, error: configError } = await supabase
       .from('sheet_configurations')
       .select('*')
       .eq('id', configuration_id)
-      .eq('user_id', user.id)
+      .eq('is_active', true)
       .single();
 
     if (configError || !config) {
