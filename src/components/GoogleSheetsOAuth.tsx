@@ -12,12 +12,13 @@ export function GoogleSheetsOAuth() {
   const queryClient = useQueryClient();
 
   // Check if user has connected Google Sheets
+  // SECURITY: Only select non-sensitive fields (NOT access_token or refresh_token)
   const { data: credentials, isLoading } = useQuery({
     queryKey: ['google-sheets-credentials'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('google_sheets_credentials')
-        .select('*')
+        .select('id, user_id, expires_at, created_at, updated_at')
         .maybeSingle();
       
       if (error && error.code !== 'PGRST116') throw error;
