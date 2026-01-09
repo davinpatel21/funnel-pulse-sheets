@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Verify API key
+    // Verify API key using secure hash comparison
     const apiKey = req.headers.get('x-api-key');
     if (!apiKey) {
       return new Response(
@@ -51,10 +51,20 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Hash the incoming key and compare with stored hash
+    const { data: hashedKey, error: hashError } = await supabaseClient.rpc('hash_api_key', { key: apiKey });
+    if (hashError) {
+      console.error('Hash error:', hashError);
+      return new Response(
+        JSON.stringify({ error: 'Internal error' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const { data: keyData, error: keyError } = await supabaseClient
       .from('api_keys')
-      .select('user_id, is_active')
-      .eq('api_key', apiKey)
+      .select('id, user_id, is_active')
+      .eq('api_key_hash', hashedKey)
       .single();
 
     if (keyError || !keyData || !keyData.is_active) {
@@ -64,11 +74,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Update last_used_at
+    // Update last_used_at using the key's ID (not plaintext key)
     await supabaseClient
       .from('api_keys')
       .update({ last_used_at: new Date().toISOString() })
-      .eq('api_key', apiKey);
+      .eq('id', keyData.id);
 
     const url = new URL(req.url);
     const path = url.pathname.replace('/api/', '');
