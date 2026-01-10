@@ -68,58 +68,72 @@ async function validateSession(): Promise<boolean> {
 
 /**
  * Attempts to refresh the session using the refresh token
+ * Returns the new session if successful, null otherwise
  */
-async function tryRefreshSession(): Promise<boolean> {
+async function tryRefreshSession(): Promise<{ session: any; success: boolean }> {
   try {
-    console.log(`[authHelpers] Attempting to refresh session...`);
+    const timestamp = new Date().toISOString();
+    console.log(`[authHelpers] [${timestamp}] Attempting to refresh session...`);
     const { data, error } = await supabase.auth.refreshSession();
     if (error) {
-      console.log(`[authHelpers] Refresh failed:`, error.message);
-      return false;
+      console.log(`[authHelpers] [${timestamp}] Refresh failed:`, error.message);
+      return { session: null, success: false };
     }
     if (!data.session) {
-      console.log(`[authHelpers] Refresh returned no session`);
-      return false;
+      console.log(`[authHelpers] [${timestamp}] Refresh returned no session`);
+      return { session: null, success: false };
     }
-    console.log(`[authHelpers] Session refreshed successfully`);
-    return true;
+    console.log(`[authHelpers] [${timestamp}] Session refreshed successfully, new token expires:`, data.session.expires_at);
+    return { session: data.session, success: true };
   } catch (e: any) {
     console.log(`[authHelpers] Refresh exception:`, e?.message);
-    return false;
+    return { session: null, success: false };
   }
 }
 
 /**
  * Gets a valid session, with retry and refresh logic
+ * IMPORTANT: Always returns the freshest session after any refresh operation
  */
 async function getValidSession(maxRetries = 3, retryDelayMs = 500): Promise<{ session: any; error: Error | null }> {
+  const timestamp = new Date().toISOString();
+  console.log(`[authHelpers] [${timestamp}] getValidSession called`);
+  
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const { data: { session } } = await supabase.auth.getSession();
     
     if (session) {
+      console.log(`[authHelpers] [${timestamp}] Attempt ${attempt + 1}: Found session, token prefix: ${session.access_token?.slice(0, 20)}...`);
+      
       // Validate the session is actually usable
       const isValid = await validateSession();
       if (isValid) {
+        console.log(`[authHelpers] [${timestamp}] Session validated successfully`);
         return { session, error: null };
       }
       
       // Session exists but invalid - try refresh
-      console.log(`[authHelpers] Session invalid on attempt ${attempt + 1}, attempting refresh...`);
-      const refreshed = await tryRefreshSession();
-      if (refreshed) {
-        const { data: { session: newSession } } = await supabase.auth.getSession();
-        if (newSession) {
-          return { session: newSession, error: null };
-        }
+      console.log(`[authHelpers] [${timestamp}] Session invalid on attempt ${attempt + 1}, attempting refresh...`);
+      const { session: refreshedSession, success } = await tryRefreshSession();
+      
+      if (success && refreshedSession) {
+        // Use the session directly from refresh, not from getSession()
+        // This ensures we have the absolute freshest token
+        console.log(`[authHelpers] [${timestamp}] Using freshly refreshed session, token prefix: ${refreshedSession.access_token?.slice(0, 20)}...`);
+        return { session: refreshedSession, error: null };
       }
+    } else {
+      console.log(`[authHelpers] [${timestamp}] Attempt ${attempt + 1}: No session found`);
     }
     
     // Wait before retry (except on last attempt)
     if (attempt < maxRetries - 1) {
+      console.log(`[authHelpers] [${timestamp}] Waiting ${retryDelayMs}ms before retry...`);
       await new Promise(resolve => setTimeout(resolve, retryDelayMs));
     }
   }
   
+  console.log(`[authHelpers] [${timestamp}] Failed to get valid session after ${maxRetries} attempts`);
   return { session: null, error: new Error("Unable to establish valid auth session") };
 }
 
@@ -158,38 +172,38 @@ export async function invokeWithAuth<T = any>(
 
   // Handle 401 with one retry after refresh
   if (result.error) {
-    // FunctionsHttpError stores Response in context, and result.response is the same
-    // We need to check the actual Response object's status property
     const responseObj = result.response as Response | undefined;
     const errorContext = (result.error as any)?.context as Response | undefined;
     const status = responseObj?.status ?? errorContext?.status;
+    const timestamp = new Date().toISOString();
     
-    console.log(`[invokeWithAuth] Error detected, status=${status}`, { 
+    console.log(`[invokeWithAuth] [${timestamp}] Error detected for ${functionName}, status=${status}`, { 
       hasResponse: !!responseObj, 
       hasContext: !!errorContext,
-      errorName: result.error?.name 
+      errorName: result.error?.name,
+      tokenUsed: session.access_token?.slice(0, 20) + '...'
     });
     
     if (status === 401) {
-      console.log(`[invokeWithAuth] Got 401, attempting token refresh...`);
+      console.log(`[invokeWithAuth] [${timestamp}] Got 401, attempting token refresh...`);
       
-      const refreshed = await tryRefreshSession();
-      if (refreshed) {
-        const { data: { session: newSession } } = await supabase.auth.getSession();
-        if (newSession) {
-          console.log(`[invokeWithAuth] Token refreshed successfully, retrying call...`);
-          result = await makeCall(newSession.access_token);
-          
-          // Check if retry also failed
-          if (result.error) {
-            const retryStatus = (result.response as Response)?.status;
-            console.log(`[invokeWithAuth] Retry result: ${retryStatus ? `status ${retryStatus}` : 'error'}`);
-          }
+      // Refresh and get the NEW session directly from the refresh response
+      const { session: refreshedSession, success } = await tryRefreshSession();
+      
+      if (success && refreshedSession) {
+        console.log(`[invokeWithAuth] [${timestamp}] Token refreshed, new token prefix: ${refreshedSession.access_token?.slice(0, 20)}..., retrying call...`);
+        
+        // Use the fresh token directly from refresh, not from getSession()
+        result = await makeCall(refreshedSession.access_token);
+        
+        if (result.error) {
+          const retryStatus = (result.response as Response)?.status;
+          console.log(`[invokeWithAuth] [${timestamp}] Retry failed: ${retryStatus ? `status ${retryStatus}` : 'error'}`);
         } else {
-          console.log(`[invokeWithAuth] Session refresh succeeded but no new session available`);
+          console.log(`[invokeWithAuth] [${timestamp}] Retry succeeded after token refresh`);
         }
       } else {
-        console.log(`[invokeWithAuth] Token refresh failed`);
+        console.log(`[invokeWithAuth] [${timestamp}] Token refresh failed, cannot retry`);
       }
     }
   }

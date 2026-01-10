@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, CheckCircle2, AlertCircle, FileSpreadsheet, Sparkles, LogIn } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, FileSpreadsheet, Sparkles, LogIn, RefreshCw, Clock } from "lucide-react";
 import { invokeWithAuth } from "@/lib/authHelpers";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -81,6 +81,8 @@ export function GoogleSheetsImport({
   const [userId, setUserId] = useState<string | null>(null);
   const [connectionComplete, setConnectionComplete] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [analysisStartTime, setAnalysisStartTime] = useState<number | null>(null);
+  const [showSlowWarning, setShowSlowWarning] = useState(false);
 
   // Check authentication status using getUser() for validation
   useEffect(() => {
@@ -149,29 +151,44 @@ export function GoogleSheetsImport({
     }
   }, [tabAnalyses.length, currentAnalyzingIndex, allAnalyzed, isLoggedIn]);
 
-  const analyzeNextTab = async (index: number) => {
+  const analyzeNextTab = async (index: number, retryCount = 0) => {
+    const maxRetries = 2;
+    
     if (index >= tabAnalyses.length) {
       setAllAnalyzed(true);
       setCurrentAnalyzingIndex(-1);
+      setAnalysisStartTime(null);
+      setShowSlowWarning(false);
       return;
     }
 
     setCurrentAnalyzingIndex(index);
+    if (index === 0) {
+      setAnalysisStartTime(Date.now());
+    }
+    
     const tab = tabAnalyses[index].tab;
     const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${tab.sheetId}`;
 
     const timer = createTimedOperation('GoogleSheetsImport', `analyze tab ${tab.title}`);
-    debugLog('GoogleSheetsImport', `Analyzing tab ${index + 1}/${tabAnalyses.length}`, {
+    debugLog('GoogleSheetsImport', `Analyzing tab ${index + 1}/${tabAnalyses.length} (attempt ${retryCount + 1})`, {
       tabTitle: tab.title,
       sheetId: tab.sheetId,
       gid: tab.sheetId,
       sheetUrl,
     });
 
+    // Timeout handling - show slow warning after 10 seconds
+    const slowTimeout = setTimeout(() => {
+      setShowSlowWarning(true);
+    }, 10000);
+
     try {
       const { data, error } = await invokeWithAuth('google-sheets-import?action=analyze', {
         body: { sheetUrl },
       });
+
+      clearTimeout(slowTimeout);
 
       if (error) {
         const requestId = (error as any).requestId;
@@ -181,10 +198,21 @@ export function GoogleSheetsImport({
           tabIndex: index,
           tabTitle: tab.title,
           requestId,
+          retryCount,
         });
 
-        // Check if it's an auth error
+        // Check if it's an auth error - retry once after a delay
         if (backendCode === 'AUTH_REQUIRED' || error.message.includes('sign in')) {
+          if (retryCount < maxRetries) {
+            console.log(`[GoogleSheetsImport] Auth error on tab ${tab.title}, retrying in 1s... (attempt ${retryCount + 1})`);
+            toast({
+              title: "Refreshing authentication...",
+              description: `Retrying analysis for "${tab.title}"`,
+            });
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            return analyzeNextTab(index, retryCount + 1);
+          }
+          
           setAuthError("Your session has expired. Please sign in again to continue.");
           setTabAnalyses(prev => {
             const updated = [...prev];
@@ -195,7 +223,6 @@ export function GoogleSheetsImport({
             };
             return updated;
           });
-          // Stop analyzing further tabs on auth error
           setAllAnalyzed(true);
           setCurrentAnalyzingIndex(-1);
           return;
@@ -210,12 +237,14 @@ export function GoogleSheetsImport({
         mappings: data.analysis?.mappings?.length,
       });
 
+      setShowSlowWarning(false);
       setTabAnalyses(prev => {
         const updated = [...prev];
         updated[index] = {
           ...updated[index],
           analysis: { ...data, tabTitle: tab.title },
           mappings: data.analysis.mappings,
+          error: undefined,
         };
         return updated;
       });
@@ -223,13 +252,22 @@ export function GoogleSheetsImport({
       // Analyze next tab
       analyzeNextTab(index + 1);
     } catch (error: any) {
+      clearTimeout(slowTimeout);
       const errorMessage = formatErrorForDisplay(error);
       const requestId = error.requestId;
       
       debugError('GoogleSheetsImport', `Tab analysis exception`, error, {
         tabIndex: index,
         tabTitle: tab.title,
+        retryCount,
       });
+      
+      // Retry on network errors
+      if (retryCount < maxRetries && (error.message?.includes('network') || error.message?.includes('fetch'))) {
+        console.log(`[GoogleSheetsImport] Network error on tab ${tab.title}, retrying...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return analyzeNextTab(index, retryCount + 1);
+      }
       
       setTabAnalyses(prev => {
         const updated = [...prev];
@@ -243,6 +281,19 @@ export function GoogleSheetsImport({
       // Continue with next tab even if this one fails
       analyzeNextTab(index + 1);
     }
+  };
+
+  const retryFailedTab = async (tabIndex: number) => {
+    setTabAnalyses(prev => {
+      const updated = [...prev];
+      updated[tabIndex] = {
+        ...updated[tabIndex],
+        error: undefined,
+        debugInfo: undefined,
+      };
+      return updated;
+    });
+    await analyzeNextTab(tabIndex);
   };
 
   const handleMappingChange = (tabIndex: number, mappingIndex: number, newDbField: string) => {
@@ -453,6 +504,17 @@ export function GoogleSheetsImport({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Slow warning */}
+          {showSlowWarning && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center gap-3">
+              <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-amber-900 dark:text-amber-100">Taking longer than expected...</p>
+                <p className="text-xs text-amber-800 dark:text-amber-200">This sometimes happens with large sheets. Please wait a moment.</p>
+              </div>
+            </div>
+          )}
+          
           {/* Overall progress */}
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
@@ -627,25 +689,40 @@ export function GoogleSheetsImport({
           );
         })}
 
-        {/* Failed analyses warning */}
+        {/* Failed analyses warning with retry buttons */}
         {failedAnalyses.length > 0 && (
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-4">
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
             <div className="flex items-start gap-3">
               <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
-              <div>
+              <div className="flex-1">
                 <p className="text-sm font-medium text-yellow-900 dark:text-yellow-100">
                   {failedAnalyses.length} tab{failedAnalyses.length !== 1 ? 's' : ''} could not be analyzed
                 </p>
-                <ul className="mt-1 text-sm text-yellow-800 dark:text-yellow-200">
-                  {failedAnalyses.map(ta => (
-                    <li key={ta.tab.sheetId}>
-                      • {ta.tab.title}: {ta.error}
-                      {ta.debugInfo?.requestId && (
-                        <span className="text-xs opacity-70"> (Request: {ta.debugInfo.requestId.slice(0, 8)})</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+                <div className="mt-2 space-y-2">
+                  {failedAnalyses.map(ta => {
+                    const actualTabIndex = tabAnalyses.findIndex(t => t.tab.sheetId === ta.tab.sheetId);
+                    return (
+                      <div key={ta.tab.sheetId} className="flex items-center justify-between gap-2 text-sm">
+                        <div className="flex-1 min-w-0">
+                          <span className="font-medium text-yellow-900 dark:text-yellow-100">{ta.tab.title}</span>
+                          <span className="text-yellow-800 dark:text-yellow-200">: {ta.error}</span>
+                          {ta.debugInfo?.requestId && (
+                            <span className="text-xs opacity-70 block"> (Request: {ta.debugInfo.requestId.slice(0, 8)})</span>
+                          )}
+                        </div>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => retryFailedTab(actualTabIndex)}
+                          className="flex-shrink-0 gap-1"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          Retry
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
