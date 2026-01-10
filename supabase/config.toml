@@ -4,13 +4,13 @@ project_id = "aehmfsvlueiqbznmrzxe"
 verify_jwt = false
 
 [functions.google-sheets-import]
-verify_jwt = true
+verify_jwt = false
 
 [functions.google-sheets-oauth]
-verify_jwt = true
+verify_jwt = false
 
 [functions.google-sheets-write-back]
-verify_jwt = true
+verify_jwt = false
 
 [functions.google-sheets-auto-sync]
 verify_jwt = false
@@ -19,4 +19,4 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.google-sheets-create]
-verify_jwt = true
+verify_jwt = false

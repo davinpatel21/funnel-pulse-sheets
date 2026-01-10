@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, XCircle, RefreshCw, ExternalLink } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { invokePathWithAuth } from "@/lib/authHelpers";
 
 export function GoogleSheetsOAuth() {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -30,19 +31,11 @@ export function GoogleSheetsOAuth() {
   const connectMutation = useMutation({
     mutationFn: async () => {
       setIsConnecting(true);
-      const { data: { session } } = await supabase.auth.getSession();
       
-      if (!session) {
-        throw new Error('Not authenticated');
-      }
-
-      const { data, error } = await supabase.functions.invoke('google-sheets-oauth/initiate', {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      });
+      const { data, error } = await invokePathWithAuth('google-sheets-oauth/initiate');
 
       if (error) throw error;
+      if (!data?.authUrl) throw new Error('No auth URL returned');
       
       // Redirect to Google OAuth
       window.location.href = data.authUrl;

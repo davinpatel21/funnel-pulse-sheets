@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { invokeWithAuth } from "@/lib/authHelpers";
 
 interface DashboardFilters {
   setterId?: string;
@@ -20,19 +20,13 @@ export function useLiveSheetMetrics(configs: any[], filters: DashboardFilters = 
       // Fetch data from each configured sheet
       const results = await Promise.all(
         configs.map(async (config) => {
-          const { data, error } = await supabase.functions.invoke('google-sheets-live', {
+          const { data, error } = await invokeWithAuth('google-sheets-live', {
             body: { configuration_id: config.id }
           });
           
           if (error) {
-            const errorMessage = error.message || '';
-            // Check for auth-related errors
-            if (errorMessage.includes('authorization') || errorMessage.includes('AUTH_REQUIRED') || errorMessage.includes('SESSION_EXPIRED')) {
-              console.warn(`Auth error fetching sheet ${config.id}: Please sign in`);
-              return { sheet_type: config.sheet_type, data: [], error: 'Please sign in to access your data' };
-            }
             console.error(`Error fetching sheet ${config.id}:`, error);
-            return { sheet_type: config.sheet_type, data: [], error: errorMessage || 'Unknown error' };
+            return { sheet_type: config.sheet_type, data: [], error: error.message || 'Unknown error' };
           }
           
           if (!data) {
