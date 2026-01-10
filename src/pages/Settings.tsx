@@ -3,10 +3,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { RefreshCw, FileSpreadsheet, CheckCircle2, Sparkles, ShieldCheck, ArrowLeft } from "lucide-react";
+import { RefreshCw, FileSpreadsheet, CheckCircle2, Sparkles, ShieldCheck, ArrowLeft, FolderOpen } from "lucide-react";
 import { GoogleSheetsOAuth } from "@/components/GoogleSheetsOAuth";
 import { GoogleSheetsFilePicker } from "@/components/GoogleSheetsFilePicker";
 import { GoogleSheetsImport } from "@/components/GoogleSheetsImport";
+import { ConnectedSheets } from "@/components/ConnectedSheets";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { TeamInviteForm } from "@/components/TeamInviteForm";
@@ -210,50 +211,33 @@ export default function Settings() {
         {/* Google Sheets Connection */}
         <GoogleSheetsOAuth />
 
-        {/* Show file picker / import flow when connected but no sheets configured */}
-        {hasCredentials && !hasSheetConfigs && (
+        {/* Connected Sheets - Show when sheets are configured */}
+        {hasCredentials && hasSheetConfigs && <ConnectedSheets />}
+
+        {/* Show file picker / import flow when connected */}
+        {hasCredentials && (
           <>
             {importMode === 'none' && (
               <div className="space-y-4">
-                {/* Create New Sheet Option */}
+                {/* Connect a Spreadsheet - Always show prominently */}
                 <Card className="border-2 border-dashed border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
                   <CardHeader className="text-center pb-2">
                     <div className="mx-auto mb-4 relative">
                       <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl" />
                       <div className="relative bg-card border rounded-xl p-4">
-                        <Sparkles className="h-8 w-8 text-primary" />
+                        <FolderOpen className="h-8 w-8 text-primary" />
                       </div>
                     </div>
-                    <CardTitle className="text-2xl">Create New Tracker Sheet</CardTitle>
+                    <CardTitle className="text-2xl">
+                      {hasSheetConfigs ? 'Connect Another Spreadsheet' : 'Connect a Spreadsheet'}
+                    </CardTitle>
                     <CardDescription className="text-base">
-                      We'll create a new Google Sheet with all the tabs you need: Team, Leads, Appointments, Calls, and Deals.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex justify-center pt-4">
-                    <Button 
-                      onClick={() => createSheetMutation.mutate()}
-                      disabled={createSheetMutation.isPending}
-                      size="lg"
-                      className="gap-2"
-                    >
-                      <FileSpreadsheet className="h-5 w-5" />
-                      {createSheetMutation.isPending ? 'Creating...' : 'Create New Tracker Sheet'}
-                    </Button>
-                  </CardContent>
-                </Card>
-
-                {/* Select Existing Sheet Option */}
-                <Card>
-                  <CardHeader className="text-center pb-2">
-                    <CardTitle className="text-xl">Or Connect Existing Spreadsheet</CardTitle>
-                    <CardDescription>
-                      Have an existing spreadsheet? Select it and our AI will automatically map your columns.
+                      Browse your Google Drive and select a spreadsheet. Our AI will automatically detect and map your columns.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="flex justify-center pt-4">
                     <Button 
                       onClick={() => setImportMode('picker')}
-                      variant="outline"
                       size="lg"
                       className="gap-2"
                     >
@@ -262,6 +246,33 @@ export default function Settings() {
                     </Button>
                   </CardContent>
                 </Card>
+
+                {/* Create New Sheet Option - Secondary */}
+                {!hasSheetConfigs && (
+                  <Card>
+                    <CardHeader className="text-center pb-2">
+                      <div className="mx-auto mb-4">
+                        <Sparkles className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                      <CardTitle className="text-xl">Or Create New Tracker Sheet</CardTitle>
+                      <CardDescription>
+                        We'll create a new Google Sheet with all the tabs you need: Team, Leads, Appointments, Calls, and Deals.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex justify-center pt-4">
+                      <Button 
+                        onClick={() => createSheetMutation.mutate()}
+                        disabled={createSheetMutation.isPending}
+                        variant="outline"
+                        size="lg"
+                        className="gap-2"
+                      >
+                        <Sparkles className="h-5 w-5" />
+                        {createSheetMutation.isPending ? 'Creating...' : 'Create New Tracker Sheet'}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             )}
 
@@ -298,28 +309,6 @@ export default function Settings() {
               </div>
             )}
           </>
-        )}
-
-        {/* Add another sheet button when already connected */}
-        {hasCredentials && hasSheetConfigs && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Add Another Spreadsheet</CardTitle>
-              <CardDescription>
-                Connect additional spreadsheets to sync more data
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button 
-                onClick={() => setImportMode('picker')}
-                variant="outline"
-                className="gap-2"
-              >
-                <FileSpreadsheet className="h-4 w-4" />
-                Browse My Spreadsheets
-              </Button>
-            </CardContent>
-          </Card>
         )}
 
         {/* Team Invites Section - Admin only */}
