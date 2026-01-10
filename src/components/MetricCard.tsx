@@ -25,7 +25,7 @@ export const MetricCard = ({
   };
 
   return (
-    <Card className="group p-6 bg-gradient-card shadow-card hover:shadow-intense transition-all duration-300 ease-out border border-border hover:border-foreground/20 animate-fade-in hover:scale-[1.02]">
+    <Card className="group p-6 bg-gradient-card shadow-card transition-all duration-300 ease-out border border-border animate-fade-in">
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <p className="text-sm font-medium text-muted-foreground mb-2">{title}</p>
