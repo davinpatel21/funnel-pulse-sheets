@@ -152,7 +152,8 @@ export function formatErrorForDisplay(error: any): string {
   let display = message;
   
   if (details?.requestId) {
-    display += ` (Request: ${details.requestId.slice(0, 8)})`;
+    const reqIdStr = String(details.requestId);
+    display += ` (Request: ${reqIdStr.slice(0, 8)})`;
   }
   
   if (details?.code) {
@@ -184,7 +185,9 @@ export function createTimedOperation(scope: string, operation: string) {
   };
 }
 
-function truncate(str: string, maxLength: number): string {
-  if (!str || str.length <= maxLength) return str;
-  return str.slice(0, maxLength) + '... [truncated]';
+function truncate(str: any, maxLength: number): string {
+  if (!str) return '';
+  const s = String(str);
+  if (s.length <= maxLength) return s;
+  return s.slice(0, maxLength) + '... [truncated]';
 }
