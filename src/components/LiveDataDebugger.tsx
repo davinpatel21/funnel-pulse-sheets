@@ -38,7 +38,11 @@ export function LiveDataDebugger({ configId }: { configId: string }) {
           <AlertCircle className="w-4 h-4 mt-0.5" />
           <div>
             <p className="font-medium">Connection Failed</p>
-            <p className="text-xs mt-1">{error.message}</p>
+            <p className="text-xs mt-1">
+              {error.message?.includes('authorization') || error.message?.includes('AUTH')
+                ? 'Please sign in to access your Google Sheets data'
+                : error.message}
+            </p>
           </div>
         </div>
       )}

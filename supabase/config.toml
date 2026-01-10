@@ -16,7 +16,7 @@ verify_jwt = true
 verify_jwt = false
 
 [functions.google-sheets-live]
-verify_jwt = true
+verify_jwt = false
 
 [functions.google-sheets-create]
 verify_jwt = true
