@@ -84,20 +84,23 @@ export function GoogleSheetsImport({
   const [analysisStartTime, setAnalysisStartTime] = useState<number | null>(null);
   const [showSlowWarning, setShowSlowWarning] = useState(false);
 
-  // Check authentication status using getUser() for validation
+  // Check authentication status using getSession() to avoid triggering token refresh
+  // NOTE: Using getSession() instead of getUser() to prevent race conditions
+  // that can cause token revocation during auto-refresh
   useEffect(() => {
     let mounted = true;
 
     const checkAuth = async () => {
-      const { data: { user }, error } = await supabase.auth.getUser();
+      // Use getSession() - it's synchronous and won't trigger auto-refresh
+      const { data: { session }, error } = await supabase.auth.getSession();
       if (mounted) {
-        if (error || !user) {
+        if (error || !session?.user) {
           setIsLoggedIn(false);
           setUserId(null);
           setAuthError("Your session has expired. Please sign in again.");
         } else {
           setIsLoggedIn(true);
-          setUserId(user.id);
+          setUserId(session.user.id);
           setAuthError(null);
         }
       }
@@ -105,20 +108,13 @@ export function GoogleSheetsImport({
 
     checkAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (mounted) {
         if (session?.user) {
-          // Validate with getUser
-          const { data: { user }, error } = await supabase.auth.getUser();
-          if (user && !error) {
-            setIsLoggedIn(true);
-            setUserId(user.id);
-            setAuthError(null);
-          } else {
-            setIsLoggedIn(false);
-            setUserId(null);
-            setAuthError("Your session has expired. Please sign in again.");
-          }
+          // Session exists - trust it without calling getUser()
+          setIsLoggedIn(true);
+          setUserId(session.user.id);
+          setAuthError(null);
         } else {
           setIsLoggedIn(false);
           setUserId(null);

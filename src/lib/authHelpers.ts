@@ -248,16 +248,26 @@ export async function invokeWithAuth<T = any>(
         }
       }
       
-      // Refresh and get the NEW session directly from the refresh response
+      // Refresh the session
       const { session: refreshedSession, success } = await tryRefreshSession();
       
       if (success && refreshedSession) {
-        console.log(`[invokeWithAuth] [${timestamp}] [${callId}] Token refreshed successfully, retrying call...`, {
-          newTokenPrefix: refreshedSession.access_token?.slice(0, 30) + '...',
+        console.log(`[invokeWithAuth] [${timestamp}] [${callId}] Token refreshed, waiting 200ms for propagation...`);
+        
+        // Wait for token to propagate across systems
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        // Re-fetch session to ensure we have the absolute latest token
+        const { data: { session: latestSession } } = await supabase.auth.getSession();
+        const tokenToUse = latestSession?.access_token || refreshedSession.access_token;
+        
+        console.log(`[invokeWithAuth] [${timestamp}] [${callId}] Using token for retry`, {
+          usedLatestSession: !!latestSession,
+          tokenPrefix: tokenToUse?.slice(0, 30) + '...',
+          tokensMatch: tokenToUse === refreshedSession.access_token,
         });
         
-        // Use the fresh token directly from refresh, not from getSession()
-        result = await makeCall(refreshedSession.access_token, 2);
+        result = await makeCall(tokenToUse, 2);
         
         if (result.error) {
           const retryResponseObj = result.response as Response | undefined;
