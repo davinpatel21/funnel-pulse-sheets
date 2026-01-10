@@ -9,7 +9,6 @@ import { GoogleSheetsFilePicker, type SheetTab } from "@/components/GoogleSheets
 import { GoogleSheetsImport } from "@/components/GoogleSheetsImport";
 import { ConnectedSheets } from "@/components/ConnectedSheets";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { TeamInviteForm } from "@/components/TeamInviteForm";
 import { invokeWithAuth } from "@/lib/authHelpers";
 import { supabase } from "@/integrations/supabase/client";
@@ -26,7 +25,6 @@ export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { status, hasCredentials, hasSheetConfigs } = useSyncStatus();
-  const { isAdmin, isLoading: isAdminLoading } = useIsAdmin();
   const [importMode, setImportMode] = useState<ImportMode>('none');
   const [selectedWorkbook, setSelectedWorkbook] = useState<SelectedWorkbook | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -129,53 +127,7 @@ export default function Settings() {
     setImportMode('none');
   };
 
-  if (isAdminLoading) {
-    return (
-      <div className="min-h-screen p-8 flex items-center justify-center">
-        <div className="text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  // Non-admin view
-  if (!isAdmin) {
-    return (
-      <div className="min-h-screen p-8">
-        <div className="max-w-2xl mx-auto space-y-8">
-          <div className="text-center space-y-2">
-            <h1 className="text-4xl font-bold tracking-tight">Settings</h1>
-            <p className="text-muted-foreground text-lg">
-              Team member access
-            </p>
-          </div>
-
-          <Card>
-            <CardHeader className="text-center">
-              <div className="mx-auto mb-4">
-                <div className="bg-success/10 rounded-xl p-4 inline-block">
-                  <ShieldCheck className="h-8 w-8 text-success" />
-                </div>
-              </div>
-              <CardTitle>You're Connected</CardTitle>
-              <CardDescription className="text-base">
-                Your admin manages the Google Sheets connection. You have access to view the shared dashboard data.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-center">
-              {hasSheetConfigs && (
-                <div className="flex items-center justify-center gap-2 text-success">
-                  <CheckCircle2 className="h-5 w-5" />
-                  <span className="font-medium">Shared dashboard is active</span>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
-  // Admin view
+  // Full settings view for all authenticated users
   return (
     <div className="min-h-screen p-8">
       <div className="max-w-2xl mx-auto space-y-8">
