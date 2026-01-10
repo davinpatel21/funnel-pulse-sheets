@@ -1,28 +1,38 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export function useSheetConfigurations() {
-  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [hasSession, setHasSession] = useState(false);
 
   useEffect(() => {
-    const checkAuth = async () => {
+    let mounted = true;
+
+    const init = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        setIsAuthReady(true);
+      if (mounted) {
+        setHasSession(!!session);
+        setSessionChecked(true);
       }
     };
 
-    checkAuth();
+    init();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session) setIsAuthReady(true);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (mounted) {
+        setHasSession(!!session);
+        setSessionChecked(true);
+      }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  return useQuery({
+  const query = useQuery({
     queryKey: ['sheet-configurations'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -34,6 +44,8 @@ export function useSheetConfigurations() {
       if (error) throw error;
       return data || [];
     },
-    enabled: isAuthReady,
+    enabled: sessionChecked && hasSession,
   });
+
+  return query;
 }
