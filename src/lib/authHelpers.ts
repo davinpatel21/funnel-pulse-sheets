@@ -50,23 +50,6 @@ async function enhanceFunctionsHttpError(error: any, response: Response): Promis
 }
 
 /**
- * Invokes a backend function with guaranteed Authorization header.
- * Ensures auth-related errors are user-friendly.
- * Includes detailed debug logging when enabled.
- */
-/**
- * Validates the current session by calling getUser()
- */
-async function validateSession(): Promise<boolean> {
-  try {
-    const { data: { user }, error } = await supabase.auth.getUser();
-    return !!user && !error;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Attempts to refresh the session using the refresh token
  * Returns the new session if successful, null otherwise
  */
@@ -83,7 +66,7 @@ async function tryRefreshSession(): Promise<{ session: any; success: boolean }> 
       console.log(`[authHelpers] [${timestamp}] Refresh returned no session`);
       return { session: null, success: false };
     }
-    console.log(`[authHelpers] [${timestamp}] Session refreshed successfully, new token expires:`, data.session.expires_at);
+    console.log(`[authHelpers] [${timestamp}] Session refreshed successfully, new token prefix: ${data.session.access_token?.slice(0, 20)}...`);
     return { session: data.session, success: true };
   } catch (e: any) {
     console.log(`[authHelpers] Refresh exception:`, e?.message);
@@ -92,48 +75,36 @@ async function tryRefreshSession(): Promise<{ session: any; success: boolean }> 
 }
 
 /**
- * Gets a valid session, with retry and refresh logic
- * IMPORTANT: Always returns the freshest session after any refresh operation
+ * Gets a valid session WITHOUT triggering unnecessary token refreshes.
+ * SIMPLIFIED: We trust getSession() and only refresh on actual 401 errors.
+ * This avoids the race condition caused by validateSession() calling getUser().
  */
-async function getValidSession(maxRetries = 3, retryDelayMs = 500): Promise<{ session: any; error: Error | null }> {
+async function getValidSession(): Promise<{ session: any; error: Error | null }> {
   const timestamp = new Date().toISOString();
   console.log(`[authHelpers] [${timestamp}] getValidSession called`);
   
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (session) {
-      console.log(`[authHelpers] [${timestamp}] Attempt ${attempt + 1}: Found session, token prefix: ${session.access_token?.slice(0, 20)}...`);
-      
-      // Validate the session is actually usable
-      const isValid = await validateSession();
-      if (isValid) {
-        console.log(`[authHelpers] [${timestamp}] Session validated successfully`);
-        return { session, error: null };
-      }
-      
-      // Session exists but invalid - try refresh
-      console.log(`[authHelpers] [${timestamp}] Session invalid on attempt ${attempt + 1}, attempting refresh...`);
-      const { session: refreshedSession, success } = await tryRefreshSession();
-      
-      if (success && refreshedSession) {
-        // Use the session directly from refresh, not from getSession()
-        // This ensures we have the absolute freshest token
-        console.log(`[authHelpers] [${timestamp}] Using freshly refreshed session, token prefix: ${refreshedSession.access_token?.slice(0, 20)}...`);
-        return { session: refreshedSession, error: null };
-      }
-    } else {
-      console.log(`[authHelpers] [${timestamp}] Attempt ${attempt + 1}: No session found`);
-    }
-    
-    // Wait before retry (except on last attempt)
-    if (attempt < maxRetries - 1) {
-      console.log(`[authHelpers] [${timestamp}] Waiting ${retryDelayMs}ms before retry...`);
-      await new Promise(resolve => setTimeout(resolve, retryDelayMs));
-    }
+  // Simply get the current session - don't validate with getUser() as it can trigger auto-refresh
+  const { data: { session }, error } = await supabase.auth.getSession();
+  
+  if (error) {
+    console.log(`[authHelpers] [${timestamp}] getSession error:`, error.message);
+    return { session: null, error: new Error("Failed to get auth session") };
   }
   
-  console.log(`[authHelpers] [${timestamp}] Failed to get valid session after ${maxRetries} attempts`);
+  if (session) {
+    console.log(`[authHelpers] [${timestamp}] Found session, token prefix: ${session.access_token?.slice(0, 20)}...`);
+    return { session, error: null };
+  }
+  
+  // No session - try one explicit refresh
+  console.log(`[authHelpers] [${timestamp}] No session found, attempting refresh...`);
+  const { session: refreshedSession, success } = await tryRefreshSession();
+  
+  if (success && refreshedSession) {
+    return { session: refreshedSession, error: null };
+  }
+  
+  console.log(`[authHelpers] [${timestamp}] Failed to get valid session`);
   return { session: null, error: new Error("Unable to establish valid auth session") };
 }
 

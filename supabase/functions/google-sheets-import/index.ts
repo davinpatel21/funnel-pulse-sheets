@@ -91,7 +91,15 @@ serve(async (req) => {
   try {
     const authHeader = req.headers.get('Authorization') || '';
     
+    // Debug logging for auth header
+    console.log(`[${requestId}] Auth header present: ${!!authHeader}, length: ${authHeader.length}`);
+    if (authHeader) {
+      const tokenPart = authHeader.replace('Bearer ', '');
+      console.log(`[${requestId}] Token prefix: ${tokenPart.slice(0, 20)}...`);
+    }
+    
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log(`[${requestId}] Rejecting: Missing or invalid Authorization header`);
       return errorResponse(requestId, 'Missing or invalid Authorization header', 'AUTH_REQUIRED', 401);
     }
 
@@ -101,11 +109,15 @@ serve(async (req) => {
       global: { headers: { Authorization: authHeader } }
     });
 
+    console.log(`[${requestId}] Calling supabase.auth.getUser()...`);
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     
     if (userError || !user) {
-      return errorResponse(requestId, 'Unauthorized', 'AUTH_REQUIRED', 401, userError?.message);
+      console.log(`[${requestId}] getUser failed: ${userError?.message || 'no user returned'}`);
+      return errorResponse(requestId, 'Unauthorized - Auth session missing!', 'AUTH_REQUIRED', 401, userError?.message);
     }
+    
+    console.log(`[${requestId}] User authenticated: ${user.id.slice(0, 8)}...`);
 
     const userId = user.id;
     const url = new URL(req.url);
