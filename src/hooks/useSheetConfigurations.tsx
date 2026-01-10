@@ -3,26 +3,26 @@ import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
 
 export function useSheetConfigurations() {
-  const [sessionChecked, setSessionChecked] = useState(false);
-  const [hasSession, setHasSession] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     let mounted = true;
 
     const init = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { user } } = await supabase.auth.getUser();
       if (mounted) {
-        setHasSession(!!session);
-        setSessionChecked(true);
+        setUserId(user?.id || null);
+        setIsReady(true);
       }
     };
 
     init();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (mounted) {
-        setHasSession(!!session);
-        setSessionChecked(true);
+        setUserId(session?.user?.id || null);
+        setIsReady(true);
       }
     });
 
@@ -33,18 +33,21 @@ export function useSheetConfigurations() {
   }, []);
 
   const query = useQuery({
-    queryKey: ['sheet-configurations'],
+    queryKey: ['sheet-configurations', userId],
     queryFn: async () => {
+      if (!userId) return [];
+      
       const { data, error } = await supabase
         .from('sheet_configurations')
         .select('*')
+        .eq('user_id', userId)
         .eq('is_active', true)
         .order('created_at', { ascending: false });
       
       if (error) throw error;
       return data || [];
     },
-    enabled: sessionChecked && hasSession,
+    enabled: isReady && !!userId,
   });
 
   return query;
