@@ -5,6 +5,17 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Structured error response helper
+function errorResponse(message: string, code: string, status: number) {
+  return new Response(
+    JSON.stringify({ error: message, code, status }),
+    { 
+      status, 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    }
+  );
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -23,7 +34,11 @@ Deno.serve(async (req) => {
     const clientSecret = Deno.env.get('GOOGLE_SHEETS_CLIENT_SECRET');
 
     if (!clientId || !clientSecret) {
-      throw new Error('Google OAuth credentials not configured');
+      return errorResponse(
+        'Google OAuth credentials not configured. Please contact your administrator.',
+        'CONFIG_ERROR',
+        500
+      );
     }
 
     const redirectUri = `${supabaseUrl}/functions/v1/google-sheets-oauth/callback`;
@@ -31,15 +46,24 @@ Deno.serve(async (req) => {
     // Route: Initiate OAuth flow
     if (path === 'initiate') {
       const authHeader = req.headers.get('Authorization');
-      if (!authHeader) {
-        throw new Error('No authorization header');
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return errorResponse(
+          'Please sign in to connect your Google account',
+          'AUTH_REQUIRED',
+          401
+        );
       }
 
       const token = authHeader.replace('Bearer ', '');
       const { data: { user }, error: userError } = await supabase.auth.getUser(token);
       
       if (userError || !user) {
-        throw new Error('Invalid user token');
+        console.error('User validation error:', userError);
+        return errorResponse(
+          'Your session has expired. Please sign in again.',
+          'SESSION_EXPIRED',
+          401
+        );
       }
 
       // Capture origin from the requesting frontend
@@ -67,13 +91,34 @@ Deno.serve(async (req) => {
     if (path === 'callback') {
       const code = url.searchParams.get('code');
       const state = url.searchParams.get('state');
+      const errorParam = url.searchParams.get('error');
+
+      // Handle Google OAuth errors (user denied, etc.)
+      if (errorParam) {
+        console.error('Google OAuth error:', errorParam);
+        const frontendUrl = Deno.env.get('FRONTEND_URL') || supabaseUrl.replace('.supabase.co', '.lovable.app');
+        return new Response(null, {
+          status: 302,
+          headers: {
+            'Location': `${frontendUrl}/settings?oauth=error&reason=${encodeURIComponent(errorParam)}`,
+          },
+        });
+      }
 
       if (!code || !state) {
-        throw new Error('Missing code or state parameter');
+        return errorResponse('Missing code or state parameter', 'INVALID_CALLBACK', 400);
       }
 
       // Decode state to get user ID and redirect origin
-      const { userId, redirectOrigin } = JSON.parse(atob(state));
+      let userId: string;
+      let redirectOrigin: string | undefined;
+      try {
+        const decoded = JSON.parse(atob(state));
+        userId = decoded.userId;
+        redirectOrigin = decoded.redirectOrigin;
+      } catch (e) {
+        return errorResponse('Invalid state parameter', 'INVALID_STATE', 400);
+      }
 
       // Exchange code for tokens
       const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
@@ -90,7 +135,14 @@ Deno.serve(async (req) => {
 
       if (!tokenResponse.ok) {
         const error = await tokenResponse.text();
-        throw new Error(`Token exchange failed: ${error}`);
+        console.error('Token exchange failed:', error);
+        const frontendUrl = Deno.env.get('FRONTEND_URL') || redirectOrigin || supabaseUrl.replace('.supabase.co', '.lovable.app');
+        return new Response(null, {
+          status: 302,
+          headers: {
+            'Location': `${frontendUrl}/settings?oauth=error&reason=token_exchange_failed`,
+          },
+        });
       }
 
       const tokens = await tokenResponse.json();
@@ -112,7 +164,13 @@ Deno.serve(async (req) => {
 
       if (dbError) {
         console.error('Database error:', dbError);
-        throw new Error('Failed to store credentials');
+        const frontendUrl = Deno.env.get('FRONTEND_URL') || redirectOrigin || supabaseUrl.replace('.supabase.co', '.lovable.app');
+        return new Response(null, {
+          status: 302,
+          headers: {
+            'Location': `${frontendUrl}/settings?oauth=error&reason=storage_failed`,
+          },
+        });
       }
 
       // Determine redirect URL with priority: FRONTEND_URL > redirectOrigin > fallback
@@ -147,9 +205,6 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('OAuth error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return errorResponse(errorMessage, 'INTERNAL_ERROR', 500);
   }
 });

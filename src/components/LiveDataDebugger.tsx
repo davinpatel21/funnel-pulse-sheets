@@ -1,15 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, CheckCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { invokeWithAuth } from "@/lib/authHelpers";
 
 export function LiveDataDebugger({ configId }: { configId: string }) {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['debug-live-data', configId],
     queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke('google-sheets-live', {
+      const { data, error } = await invokeWithAuth('google-sheets-live', {
         body: { configuration_id: configId }
       });
       
@@ -73,7 +73,7 @@ export function LiveDataDebugger({ configId }: { configId: string }) {
       {data?.error && (
         <div className="text-sm text-destructive">
           <p className="font-medium">Edge Function Error:</p>
-          <p className="text-xs mt-1">{data.error}</p>
+          <p className="text-xs mt-1">{data.error instanceof Error ? data.error.message : String(data.error)}</p>
         </div>
       )}
     </Card>

@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { useSheetConfigurations } from "./useSheetConfigurations";
 import { useToast } from "@/hooks/use-toast";
+import { invokeWithAuth } from "@/lib/authHelpers";
 
 export type SheetType = 'team' | 'leads' | 'appointments' | 'calls' | 'deals';
 
@@ -27,17 +27,12 @@ export function useLiveSheetData<T = any>(sheetType: SheetType): LiveSheetDataRe
     queryFn: async () => {
       if (!config) return [];
       
-      const { data: result, error } = await supabase.functions.invoke('google-sheets-live', {
+      const { data: result, error } = await invokeWithAuth('google-sheets-live', {
         body: { configuration_id: config.id }
       });
       
       if (error) {
         console.error('Error fetching sheet data:', error);
-        // Check for auth-related errors and provide user-friendly message
-        const errorMessage = error.message || '';
-        if (errorMessage.includes('authorization') || errorMessage.includes('AUTH_REQUIRED') || errorMessage.includes('SESSION_EXPIRED')) {
-          throw new Error('Please sign in to access your data');
-        }
         throw error;
       }
       

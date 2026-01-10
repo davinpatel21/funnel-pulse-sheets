@@ -1,5 +1,5 @@
+import { useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { GoogleSheetsOAuth } from "@/components/GoogleSheetsOAuth";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { TeamInviteForm } from "@/components/TeamInviteForm";
+import { invokeWithAuth } from "@/lib/authHelpers";
 
 export default function Settings() {
   const { toast } = useToast();
@@ -15,9 +16,33 @@ export default function Settings() {
   const { status, hasCredentials, hasSheetConfigs } = useSyncStatus();
   const { isAdmin, isLoading: isAdminLoading } = useIsAdmin();
 
+  // Handle OAuth success/error from redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthResult = params.get('oauth');
+    
+    if (oauthResult === 'success') {
+      toast({
+        title: "Connected!",
+        description: "Google Sheets connected successfully. You can now create your tracker sheet.",
+      });
+      queryClient.invalidateQueries({ queryKey: ['google-sheets-credentials'] });
+      // Clean up URL
+      window.history.replaceState({}, '', '/settings');
+    } else if (oauthResult === 'error') {
+      const reason = params.get('reason') || 'Unknown error';
+      toast({
+        title: "Connection failed",
+        description: `Could not connect Google Sheets: ${reason}`,
+        variant: "destructive",
+      });
+      window.history.replaceState({}, '', '/settings');
+    }
+  }, [toast, queryClient]);
+
   const syncNowMutation = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke('google-sheets-auto-sync');
+      const { data, error } = await invokeWithAuth('google-sheets-auto-sync');
       if (error) throw error;
       return data;
     },
@@ -40,7 +65,7 @@ export default function Settings() {
 
   const createSheetMutation = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke('google-sheets-create', {
+      const { data, error } = await invokeWithAuth('google-sheets-create', {
         body: { sheetName: `Sales Tracker - ${new Date().toLocaleDateString()}` }
       });
       if (error) throw error;
