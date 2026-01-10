@@ -60,13 +60,25 @@ export async function invokeWithAuth<T = any>(
 ): Promise<{ data: T | null; error: Error | null }> {
   const timer = createTimedOperation("invokeWithAuth", functionName);
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  // Try to get session with retry for auth hydration
+  let session = null;
+  let attempts = 0;
+  const maxAttempts = 3;
+
+  while (!session?.access_token && attempts < maxAttempts) {
+    const { data } = await supabase.auth.getSession();
+    session = data.session;
+
+    if (!session?.access_token && attempts < maxAttempts - 1) {
+      // Wait briefly for auth to hydrate
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    attempts++;
+  }
 
   if (!session?.access_token) {
     const err = new Error("Please sign in to continue");
-    timer.error("No session", err);
+    timer.error("No session after retries", err);
     return { data: null, error: err };
   }
 
