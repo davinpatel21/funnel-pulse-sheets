@@ -41,7 +41,30 @@ Deno.serve(async (req) => {
       );
     }
 
-    const redirectUri = `${supabaseUrl}/functions/v1/google-sheets-oauth/callback`;
+    // Determine redirect URI - support localhost for local development
+    // Check if request is coming from localhost
+    const requestOrigin = req.headers.get('origin') || req.headers.get('referer') || '';
+    const isLocalhost = requestOrigin.includes('localhost') || requestOrigin.includes('127.0.0.1') || 
+                       url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+    
+    // Allow override via environment variable, or detect localhost
+    const localCallbackUrl = Deno.env.get('LOCAL_CALLBACK_URL');
+    let redirectUri: string;
+    
+    if (isLocalhost && localCallbackUrl) {
+      // Use explicit local callback URL if provided
+      redirectUri = localCallbackUrl;
+    } else if (isLocalhost) {
+      // Default localhost callback (assumes Supabase CLI is running on default port)
+      redirectUri = `http://127.0.0.1:54321/functions/v1/google-sheets-oauth/callback`;
+    } else {
+      // Production callback
+      redirectUri = `${supabaseUrl}/functions/v1/google-sheets-oauth/callback`;
+    }
+
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/5a1857ea-8661-4f82-a825-26d587272163',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-sheets-oauth/index.ts:44',message:'OAuth config - redirect URI construction',data:{supabaseUrl,redirectUri,isLocalhost,requestOrigin,hasClientId:!!clientId,hasClientSecret:!!clientSecret},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C,D'})}).catch(()=>{});
+    // #endregion
 
     // Route: Initiate OAuth flow
     if (path === 'initiate') {
@@ -93,6 +116,10 @@ Deno.serve(async (req) => {
       const state = url.searchParams.get('state');
       const errorParam = url.searchParams.get('error');
 
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/5a1857ea-8661-4f82-a825-26d587272163',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-sheets-oauth/index.ts:91',message:'OAuth callback - entry',data:{hasCode:!!code,codeLength:code?.length,hasState:!!state,stateLength:state?.length,errorParam,fullUrl:url.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
+
       // Handle Google OAuth errors (user denied, etc.)
       if (errorParam) {
         console.error('Google OAuth error:', errorParam);
@@ -130,10 +157,20 @@ Deno.serve(async (req) => {
         const decoded = JSON.parse(atob(state));
         userId = decoded.userId;
         redirectOrigin = decoded.redirectOrigin;
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/5a1857ea-8661-4f82-a825-26d587272163',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-sheets-oauth/index.ts:130',message:'State decoded successfully',data:{userId,hasRedirectOrigin:!!redirectOrigin,redirectOrigin},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
       } catch (e) {
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/5a1857ea-8661-4f82-a825-26d587272163',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-sheets-oauth/index.ts:134',message:'State decode failed',data:{error:String(e),stateLength:state?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
         return errorResponse('Invalid state parameter', 'INVALID_STATE', 400);
       }
 
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/5a1857ea-8661-4f82-a825-26d587272163',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-sheets-oauth/index.ts:137',message:'Token exchange - BEFORE request',data:{hasCode:!!code,codeLength:code?.length,hasClientId:!!clientId,hasClientSecret:!!clientSecret,redirectUri,redirectUriLength:redirectUri?.length,userId,hasRedirectOrigin:!!redirectOrigin},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C,D'})}).catch(()=>{});
+      // #endregion
+      
       // Exchange code for tokens
       const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
@@ -147,8 +184,15 @@ Deno.serve(async (req) => {
         }),
       });
 
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/5a1857ea-8661-4f82-a825-26d587272163',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-sheets-oauth/index.ts:150',message:'Token exchange - AFTER request',data:{status:tokenResponse.status,statusText:tokenResponse.statusText,ok:tokenResponse.ok,headers:Object.fromEntries(tokenResponse.headers.entries())},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
+
       if (!tokenResponse.ok) {
         const error = await tokenResponse.text();
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/5a1857ea-8661-4f82-a825-26d587272163',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-sheets-oauth/index.ts:152',message:'Token exchange - ERROR response',data:{status:tokenResponse.status,errorText:error,errorLength:error?.length,redirectUri,hasClientId:!!clientId,hasClientSecret:!!clientSecret},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C,D,E,F'})}).catch(()=>{});
+        // #endregion
         console.error('Token exchange failed:', error);
         const frontendUrl = Deno.env.get('FRONTEND_URL') || redirectOrigin || 'https://funnel-pulse-sheets.lovable.app';
         return new Response(null, {
