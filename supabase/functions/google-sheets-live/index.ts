@@ -251,18 +251,17 @@ serve(async (req) => {
   try {
     // Check authorization header
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return errorResponse(requestId, 'Please sign in to access your Google Sheets data', 'AUTH_REQUIRED', 401);
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      global: { headers: { Authorization: authHeader } }
-    });
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Validate user session
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     if (userError || !user) {
       return errorResponse(requestId, 'Your session has expired. Please sign in again', 'SESSION_EXPIRED', 401, userError?.message);
     }
