@@ -25,9 +25,14 @@ export function LiveDataDebugger({ configId }: { configId: string }) {
           <AlertCircle className="w-5 h-5 text-warning" />
           <h3 className="font-semibold">Live Data Debug</h3>
         </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Test Connection
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => refetch()}
+          disabled={isLoading}
+        >
+          <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+          {isLoading ? 'Testing...' : 'Test Connection'}
         </Button>
       </div>
       
