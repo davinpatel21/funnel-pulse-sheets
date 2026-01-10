@@ -2,17 +2,10 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, FileSpreadsheet, Search, FolderOpen, ChevronRight, Table2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Loader2, FileSpreadsheet, Search, FolderOpen, ChevronRight, Table2, Sparkles } from "lucide-react";
 import { invokeWithAuth } from "@/lib/authHelpers";
 import { formatDistanceToNow } from "date-fns";
 
@@ -23,21 +16,39 @@ interface SpreadsheetFile {
   webViewLink: string;
 }
 
-interface SheetTab {
+export interface SheetTab {
   sheetId: number;
   title: string;
   rowCount: number;
 }
 
+// Known entity types that we can auto-detect
+const KNOWN_ENTITY_TYPES = ['team', 'leads', 'appointments', 'calls', 'deals'];
+
+function detectEntityType(tabTitle: string): string | null {
+  const lower = tabTitle.toLowerCase().trim();
+  for (const entity of KNOWN_ENTITY_TYPES) {
+    if (lower.includes(entity) || lower === entity) {
+      return entity;
+    }
+  }
+  // Additional common variations
+  if (lower.includes('roster') || lower.includes('members') || lower.includes('staff')) return 'team';
+  if (lower.includes('prospect') || lower.includes('contact')) return 'leads';
+  if (lower.includes('meeting') || lower.includes('booking') || lower.includes('calendar')) return 'appointments';
+  if (lower.includes('revenue') || lower.includes('sales') || lower.includes('closed')) return 'deals';
+  return null;
+}
+
 interface GoogleSheetsFilePickerProps {
-  onSelect: (spreadsheetId: string, spreadsheetName: string, sheetId: number, sheetTitle: string) => void;
+  onSelect: (spreadsheetId: string, spreadsheetName: string, selectedTabs: SheetTab[]) => void;
   isLoading?: boolean;
 }
 
 export function GoogleSheetsFilePicker({ onSelect, isLoading }: GoogleSheetsFilePickerProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSpreadsheet, setSelectedSpreadsheet] = useState<SpreadsheetFile | null>(null);
-  const [selectedTab, setSelectedTab] = useState<SheetTab | null>(null);
+  const [selectedTabIds, setSelectedTabIds] = useState<Set<number>>(new Set());
 
   // Fetch list of spreadsheets
   const { 
@@ -72,36 +83,66 @@ export function GoogleSheetsFilePicker({ onSelect, isLoading }: GoogleSheetsFile
     enabled: !!selectedSpreadsheet,
   });
 
+  // Auto-select recognized tabs when tabs load
   const filteredSpreadsheets = spreadsheets?.filter(file =>
     file.name.toLowerCase().includes(searchQuery.toLowerCase())
   ) || [];
 
   const handleSpreadsheetSelect = (file: SpreadsheetFile) => {
     setSelectedSpreadsheet(file);
-    setSelectedTab(null);
+    setSelectedTabIds(new Set());
   };
 
-  const handleTabSelect = (sheetId: string) => {
-    const tab = tabsData?.sheets.find(s => s.sheetId.toString() === sheetId);
-    if (tab) {
-      setSelectedTab(tab);
-    }
+  // Auto-detect and pre-select tabs when tabsData loads
+  const getAutoSelectedTabs = (): Set<number> => {
+    if (!tabsData?.sheets) return new Set();
+    const autoSelected = new Set<number>();
+    tabsData.sheets.forEach(tab => {
+      if (detectEntityType(tab.title)) {
+        autoSelected.add(tab.sheetId);
+      }
+    });
+    return autoSelected;
   };
 
-  const handleAnalyze = () => {
-    if (selectedSpreadsheet && selectedTab) {
-      onSelect(
-        selectedSpreadsheet.id, 
-        selectedSpreadsheet.name, 
-        selectedTab.sheetId, 
-        selectedTab.title
-      );
+  // Initialize selection when tabs load
+  if (tabsData?.sheets && selectedTabIds.size === 0) {
+    const autoSelected = getAutoSelectedTabs();
+    if (autoSelected.size > 0 && selectedTabIds.size === 0) {
+      setSelectedTabIds(autoSelected);
     }
+  }
+
+  const handleTabToggle = (sheetId: number, checked: boolean) => {
+    const newSelected = new Set(selectedTabIds);
+    if (checked) {
+      newSelected.add(sheetId);
+    } else {
+      newSelected.delete(sheetId);
+    }
+    setSelectedTabIds(newSelected);
+  };
+
+  const handleSelectAll = () => {
+    if (!tabsData?.sheets) return;
+    setSelectedTabIds(new Set(tabsData.sheets.map(t => t.sheetId)));
+  };
+
+  const handleSelectNone = () => {
+    setSelectedTabIds(new Set());
+  };
+
+  const handleSyncSelected = () => {
+    if (!selectedSpreadsheet || !tabsData?.sheets) return;
+    const selectedTabs = tabsData.sheets.filter(tab => selectedTabIds.has(tab.sheetId));
+    if (selectedTabs.length === 0) return;
+    
+    onSelect(selectedSpreadsheet.id, selectedSpreadsheet.name, selectedTabs);
   };
 
   const handleBack = () => {
     setSelectedSpreadsheet(null);
-    setSelectedTab(null);
+    setSelectedTabIds(new Set());
   };
 
   // Error state
@@ -132,8 +173,10 @@ export function GoogleSheetsFilePicker({ onSelect, isLoading }: GoogleSheetsFile
     );
   }
 
-  // Spreadsheet selected - show tabs
+  // Spreadsheet selected - show tabs with checkboxes
   if (selectedSpreadsheet) {
+    const recognizedCount = tabsData?.sheets?.filter(t => detectEntityType(t.title)).length || 0;
+    
     return (
       <Card>
         <CardHeader>
@@ -146,7 +189,7 @@ export function GoogleSheetsFilePicker({ onSelect, isLoading }: GoogleSheetsFile
                 <FileSpreadsheet className="h-5 w-5 text-primary" />
                 {selectedSpreadsheet.name}
               </CardTitle>
-              <CardDescription>Select a tab to analyze</CardDescription>
+              <CardDescription>Select tabs to sync with your dashboard</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -162,50 +205,91 @@ export function GoogleSheetsFilePicker({ onSelect, isLoading }: GoogleSheetsFile
             </div>
           ) : (
             <>
-              <div className="space-y-2">
-                <Label>Select Tab</Label>
-                <Select value={selectedTab?.sheetId.toString() || ""} onValueChange={handleTabSelect}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a tab..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {tabsData?.sheets.map((tab) => (
-                      <SelectItem key={tab.sheetId} value={tab.sheetId.toString()}>
-                        <div className="flex items-center gap-2">
-                          <Table2 className="h-4 w-4 text-muted-foreground" />
-                          <span>{tab.title}</span>
-                          <Badge variant="secondary" className="ml-2 text-xs">
-                            {tab.rowCount} rows
-                          </Badge>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {selectedTab && (
-                <div className="pt-4">
-                  <Button 
-                    onClick={handleAnalyze} 
-                    disabled={isLoading}
-                    className="w-full gap-2"
-                    size="lg"
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Analyzing...
-                      </>
-                    ) : (
-                      <>
-                        <ChevronRight className="h-4 w-4" />
-                        Analyze "{selectedTab.title}" with AI
-                      </>
-                    )}
-                  </Button>
+              {/* Auto-detection notice */}
+              {recognizedCount > 0 && (
+                <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 flex items-start gap-2">
+                  <Sparkles className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                  <div className="text-sm">
+                    <p className="font-medium text-foreground">
+                      {recognizedCount} tab{recognizedCount !== 1 ? 's' : ''} auto-detected
+                    </p>
+                    <p className="text-muted-foreground">
+                      We found tabs that match known data types (Team, Leads, Appointments, Calls, Deals).
+                    </p>
+                  </div>
                 </div>
               )}
+
+              {/* Select all / none buttons */}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  {selectedTabIds.size} of {tabsData?.sheets?.length || 0} tabs selected
+                </span>
+                <div className="flex gap-2">
+                  <Button variant="ghost" size="sm" onClick={handleSelectAll}>
+                    Select All
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={handleSelectNone}>
+                    Clear
+                  </Button>
+                </div>
+              </div>
+
+              {/* Tab list with checkboxes */}
+              <div className="border rounded-lg divide-y max-h-[300px] overflow-y-auto">
+                {tabsData?.sheets?.map((tab) => {
+                  const entityType = detectEntityType(tab.title);
+                  const isSelected = selectedTabIds.has(tab.sheetId);
+                  
+                  return (
+                    <label
+                      key={tab.sheetId}
+                      className={`flex items-center gap-3 p-4 cursor-pointer transition-colors ${
+                        isSelected ? 'bg-primary/5' : 'hover:bg-muted/50'
+                      }`}
+                    >
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={(checked) => handleTabToggle(tab.sheetId, !!checked)}
+                      />
+                      <Table2 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{tab.title}</span>
+                          {entityType && (
+                            <Badge variant="secondary" className="text-xs capitalize">
+                              {entityType}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {tab.rowCount} rows
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+
+              {/* Sync button */}
+              <Button 
+                onClick={handleSyncSelected} 
+                disabled={isLoading || selectedTabIds.size === 0}
+                className="w-full gap-2"
+                size="lg"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    Analyze {selectedTabIds.size} Tab{selectedTabIds.size !== 1 ? 's' : ''} with AI
+                  </>
+                )}
+              </Button>
             </>
           )}
         </CardContent>
@@ -222,7 +306,7 @@ export function GoogleSheetsFilePicker({ onSelect, isLoading }: GoogleSheetsFile
           Select a Spreadsheet
         </CardTitle>
         <CardDescription>
-          Choose from your Google Drive spreadsheets
+          Choose from your Google Drive spreadsheets. You can select multiple tabs to sync.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
