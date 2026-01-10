@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { SheetType } from "./useLiveSheetData";
+import { debugLog, debugError, createTimedOperation } from "@/lib/debugLogger";
 
 interface WriteBackParams {
   sheetType: SheetType;
@@ -17,6 +18,15 @@ export function useSheetWriteBack() {
 
   const mutation = useMutation({
     mutationFn: async ({ sheetType, operation, rowNumber, data, configId }: WriteBackParams) => {
+      const timer = createTimedOperation('useSheetWriteBack', `${operation} ${sheetType}`);
+      debugLog('useSheetWriteBack', `Starting ${operation}`, { 
+        sheetType, 
+        operation, 
+        rowNumber, 
+        configId,
+        dataKeys: Object.keys(data),
+      });
+      
       const { data: result, error } = await supabase.functions.invoke('google-sheets-write-back', {
         body: {
           configuration_id: configId,
@@ -27,7 +37,16 @@ export function useSheetWriteBack() {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        debugError('useSheetWriteBack', `${operation} failed`, error, {
+          sheetType,
+          configId,
+          rowNumber,
+        });
+        throw error;
+      }
+      
+      timer.success(`${operation} completed`);
       return result;
     },
     onSuccess: (_, variables) => {

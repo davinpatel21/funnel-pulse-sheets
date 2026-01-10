@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { invokeWithAuth } from "@/lib/authHelpers";
+import { debugLog, debugError, createTimedOperation } from "@/lib/debugLogger";
 
 interface DashboardFilters {
   setterId?: string;
@@ -17,26 +18,43 @@ export function useLiveSheetMetrics(configs: any[], filters: DashboardFilters = 
         return getEmptyMetrics();
       }
 
+      const timer = createTimedOperation('useLiveSheetMetrics', `fetch ${configs.length} sheets`);
+      debugLog('useLiveSheetMetrics', `Fetching metrics for ${configs.length} sheets`, {
+        sheetIds: configs.map(c => c.id),
+        sheetTypes: configs.map(c => c.sheet_type),
+      });
+
       // Fetch data from each configured sheet
       const results = await Promise.all(
         configs.map(async (config) => {
+          const sheetTimer = createTimedOperation('useLiveSheetMetrics', `sheet ${config.sheet_type}`);
+          
           const { data, error } = await invokeWithAuth('google-sheets-live', {
             body: { configuration_id: config.id }
           });
           
           if (error) {
-            console.error(`Error fetching sheet ${config.id}:`, error);
+            debugError('useLiveSheetMetrics', `Error fetching sheet ${config.id}`, error, {
+              configId: config.id,
+              sheetType: config.sheet_type,
+              requestId: (error as any).requestId,
+            });
             return { sheet_type: config.sheet_type, data: [], error: error.message || 'Unknown error' };
           }
           
           if (!data) {
-            console.warn(`No data returned for sheet ${config.id}`);
+            debugLog('useLiveSheetMetrics', `No data returned for sheet ${config.id}`, { sheetType: config.sheet_type });
             return { sheet_type: config.sheet_type, data: [] };
           }
           
+          sheetTimer.success(`Got ${data.data?.length || 0} rows`, { sheetType: data.sheet_type });
           return { sheet_type: data.sheet_type, data: data.data || [] };
         })
       );
+
+      timer.success(`Fetched all sheets`, {
+        resultCounts: results.map(r => ({ type: r.sheet_type, count: r.data.length })),
+      });
 
       // Organize data by type
       const leads = results.find(r => r.sheet_type === 'leads')?.data || [];

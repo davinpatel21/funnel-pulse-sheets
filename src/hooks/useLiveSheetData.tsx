@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSheetConfigurations } from "./useSheetConfigurations";
 import { useToast } from "@/hooks/use-toast";
 import { invokeWithAuth } from "@/lib/authHelpers";
+import { debugLog, debugError, createTimedOperation } from "@/lib/debugLogger";
 
 export type SheetType = 'team' | 'leads' | 'appointments' | 'calls' | 'deals';
 
@@ -27,14 +28,26 @@ export function useLiveSheetData<T = any>(sheetType: SheetType): LiveSheetDataRe
     queryFn: async () => {
       if (!config) return [];
       
+      const timer = createTimedOperation('useLiveSheetData', `fetch ${sheetType}`);
+      debugLog('useLiveSheetData', `Fetching ${sheetType}`, { 
+        configId: config.id,
+        sheetUrl: config.sheet_url,
+      });
+      
       const { data: result, error } = await invokeWithAuth('google-sheets-live', {
         body: { configuration_id: config.id }
       });
       
       if (error) {
-        console.error('Error fetching sheet data:', error);
+        debugError('useLiveSheetData', `Failed to fetch ${sheetType}`, error, {
+          configId: config.id,
+          requestId: (error as any).requestId,
+        });
         throw error;
       }
+      
+      const rowCount = result?.data?.length || 0;
+      timer.success(`Fetched ${rowCount} rows`, { sheetType, rowCount });
       
       return transformData(sheetType, result?.data || []);
     },
