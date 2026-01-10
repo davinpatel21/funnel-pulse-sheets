@@ -91,30 +91,65 @@ serve(async (req) => {
   try {
     const authHeader = req.headers.get('Authorization') || '';
     
-    // Debug logging for auth header
-    console.log(`[${requestId}] Auth header present: ${!!authHeader}, length: ${authHeader.length}`);
-    if (authHeader) {
-      const tokenPart = authHeader.replace('Bearer ', '');
-      console.log(`[${requestId}] Token prefix: ${tokenPart.slice(0, 20)}...`);
-    }
+    console.log(`[${requestId}] Auth header check:`, {
+      hasHeader: !!authHeader,
+      startsWithBearer: authHeader.startsWith('Bearer '),
+      headerLength: authHeader.length,
+      headerPrefix: authHeader.slice(0, 50) + (authHeader.length > 50 ? '...' : ''),
+    });
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log(`[${requestId}] Rejecting: Missing or invalid Authorization header`);
+      console.error(`[${requestId}] Missing or invalid Authorization header`);
       return errorResponse(requestId, 'Missing or invalid Authorization header', 'AUTH_REQUIRED', 401);
     }
 
+    const token = authHeader.replace('Bearer ', '');
+    console.log(`[${requestId}] Extracted token:`, {
+      tokenLength: token.length,
+      tokenPrefix: token.slice(0, 30) + '...',
+      tokenSuffix: '...' + token.slice(-10),
+    });
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    
+    console.log(`[${requestId}] Creating Supabase client:`, {
+      url: supabaseUrl,
+      hasAnonKey: !!supabaseKey,
+      anonKeyPrefix: supabaseKey?.slice(0, 20) + '...' || 'none',
+    });
+    
     const supabase = createClient(supabaseUrl, supabaseKey, {
       global: { headers: { Authorization: authHeader } }
     });
 
+<<<<<<< HEAD
     console.log(`[${requestId}] Calling supabase.auth.getUser()...`);
+=======
+    console.log(`[${requestId}] Calling getUser() to validate token...`);
+    const getUserStart = Date.now();
+>>>>>>> c633333 (Enhance authentication logging and error handling)
     const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const getUserDuration = Date.now() - getUserStart;
+    
+    console.log(`[${requestId}] getUser() result (${getUserDuration}ms):`, {
+      hasUser: !!user,
+      userId: user?.id?.slice(0, 8) + '...' || 'none',
+      userEmail: user?.email?.slice(0, 30) || 'none',
+      hasError: !!userError,
+      errorMessage: userError?.message || 'none',
+      errorStatus: userError?.status || 'none',
+      errorName: userError?.name || 'none',
+    });
     
     if (userError || !user) {
-      console.log(`[${requestId}] getUser failed: ${userError?.message || 'no user returned'}`);
-      return errorResponse(requestId, 'Unauthorized - Auth session missing!', 'AUTH_REQUIRED', 401, userError?.message);
+      console.error(`[${requestId}] getUser() failed or returned no user:`, {
+        errorMessage: userError?.message,
+        errorStatus: userError?.status,
+        errorName: userError?.name,
+        hasUser: !!user,
+      });
+      return errorResponse(requestId, 'Unauthorized', 'AUTH_REQUIRED', 401, userError?.message || 'No user found');
     }
     
     console.log(`[${requestId}] User authenticated: ${user.id.slice(0, 8)}...`);

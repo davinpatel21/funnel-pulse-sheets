@@ -57,19 +57,39 @@ async function tryRefreshSession(): Promise<{ session: any; success: boolean }> 
   try {
     const timestamp = new Date().toISOString();
     console.log(`[authHelpers] [${timestamp}] Attempting to refresh session...`);
+    
+    // Get current session before refresh
+    const { data: { session: beforeSession } } = await supabase.auth.getSession();
+    console.log(`[authHelpers] [${timestamp}] Before refresh - hasSession: ${!!beforeSession}, tokenPrefix: ${beforeSession?.access_token?.slice(0, 20) || 'none'}...`);
+    
     const { data, error } = await supabase.auth.refreshSession();
+    
     if (error) {
-      console.log(`[authHelpers] [${timestamp}] Refresh failed:`, error.message);
+      console.error(`[authHelpers] [${timestamp}] Refresh failed:`, {
+        message: error.message,
+        status: error.status,
+        name: error.name,
+      });
       return { session: null, success: false };
     }
+    
     if (!data.session) {
-      console.log(`[authHelpers] [${timestamp}] Refresh returned no session`);
+      console.error(`[authHelpers] [${timestamp}] Refresh returned no session`);
       return { session: null, success: false };
     }
-    console.log(`[authHelpers] [${timestamp}] Session refreshed successfully, new token prefix: ${data.session.access_token?.slice(0, 20)}...`);
+    
+    console.log(`[authHelpers] [${timestamp}] Session refreshed successfully`, {
+      newTokenPrefix: data.session.access_token?.slice(0, 20) + '...',
+      expiresAt: data.session.expires_at ? new Date(data.session.expires_at * 1000).toISOString() : 'unknown',
+      userId: data.session.user?.id?.slice(0, 8) + '...' || 'none',
+    });
+    
     return { session: data.session, success: true };
   } catch (e: any) {
-    console.log(`[authHelpers] Refresh exception:`, e?.message);
+    console.error(`[authHelpers] [${new Date().toISOString()}] Refresh exception:`, {
+      message: e?.message,
+      stack: e?.stack?.slice(0, 200),
+    });
     return { session: null, success: false };
   }
 }
@@ -86,8 +106,18 @@ async function getValidSession(): Promise<{ session: any; error: Error | null }>
   // Simply get the current session - don't validate with getUser() as it can trigger auto-refresh
   const { data: { session }, error } = await supabase.auth.getSession();
   
+  console.log(`[authHelpers] [${timestamp}] getSession result:`, {
+    hasSession: !!session,
+    hasError: !!error,
+    errorMessage: error?.message || 'none',
+    tokenPrefix: session?.access_token ? session.access_token.slice(0, 20) + '...' : 'none',
+    expiresAt: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : 'none',
+    expiresIn: session?.expires_at ? Math.max(0, session.expires_at - Math.floor(Date.now() / 1000)) : 'unknown',
+    userId: session?.user?.id?.slice(0, 8) + '...' || 'none',
+  });
+  
   if (error) {
-    console.log(`[authHelpers] [${timestamp}] getSession error:`, error.message);
+    console.error(`[authHelpers] [${timestamp}] getSession error:`, error.message);
     return { session: null, error: new Error("Failed to get auth session") };
   }
   
@@ -101,10 +131,11 @@ async function getValidSession(): Promise<{ session: any; error: Error | null }>
   const { session: refreshedSession, success } = await tryRefreshSession();
   
   if (success && refreshedSession) {
+    console.log(`[authHelpers] [${timestamp}] Refresh successful, got new session`);
     return { session: refreshedSession, error: null };
   }
   
-  console.log(`[authHelpers] [${timestamp}] Failed to get valid session`);
+  console.error(`[authHelpers] [${timestamp}] Failed to get valid session`);
   return { session: null, error: new Error("Unable to establish valid auth session") };
 }
 
@@ -117,64 +148,141 @@ export async function invokeWithAuth<T = any>(
   options?: { body?: any; headers?: Record<string, string> }
 ): Promise<{ data: T | null; error: Error | null }> {
   const timer = createTimedOperation("invokeWithAuth", functionName);
+  const callId = crypto.randomUUID().slice(0, 8);
+  const timestamp = new Date().toISOString();
+  
+  console.log(`[invokeWithAuth] [${timestamp}] [${callId}] Starting call to ${functionName}`, {
+    hasBody: !!options?.body,
+    bodyKeys: options?.body ? Object.keys(options.body) : [],
+    customHeaders: options?.headers ? Object.keys(options.headers) : [],
+  });
 
   // Get valid session with retries and validation
   const { session, error: sessionError } = await getValidSession();
 
   if (sessionError || !session?.access_token) {
+    console.error(`[invokeWithAuth] [${timestamp}] [${callId}] No valid session`, {
+      hasSessionError: !!sessionError,
+      sessionErrorMessage: sessionError?.message || 'none',
+      hasSession: !!session,
+      hasAccessToken: !!session?.access_token,
+    });
     const err: any = new Error("Please sign in to continue");
     err.backendCode = "SESSION_UNAVAILABLE";
     timer.error("No valid session after retries", err);
     return { data: null, error: err };
   }
 
+  console.log(`[invokeWithAuth] [${timestamp}] [${callId}] Got session`, {
+    tokenPrefix: session.access_token.slice(0, 30) + '...',
+    tokenLength: session.access_token.length,
+    expiresAt: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : 'none',
+    userId: session.user?.id?.slice(0, 8) + '...' || 'none',
+  });
+
   // Make the function call
-  const makeCall = async (accessToken: string) => {
-    return await supabase.functions.invoke<T>(functionName, {
+  const makeCall = async (accessToken: string, attempt: number = 1) => {
+    const tokenPrefix = accessToken.slice(0, 30) + '...';
+    const supabaseUrl = (supabase as any).supabaseUrl || 'unknown';
+    const attemptTimestamp = new Date().toISOString();
+    
+    console.log(`[invokeWithAuth] [${attemptTimestamp}] [${callId}] Making call (attempt ${attempt})`, {
+      functionName,
+      tokenPrefix,
+      tokenLength: accessToken.length,
+      url: `${supabaseUrl}/functions/v1/${functionName}`,
+      method: 'POST',
+      hasBody: !!options?.body,
+    });
+    
+    const startTime = Date.now();
+    const result = await supabase.functions.invoke<T>(functionName, {
       ...options,
       headers: {
         ...options?.headers,
         Authorization: `Bearer ${accessToken}`,
       },
     });
+    const duration = Date.now() - startTime;
+    
+    console.log(`[invokeWithAuth] [${attemptTimestamp}] [${callId}] Call completed in ${duration}ms`, {
+      hasError: !!result.error,
+      hasData: !!result.data,
+      errorName: result.error?.name || 'none',
+      errorMessage: result.error?.message?.slice(0, 200) || 'none',
+      responseStatus: (result.response as Response)?.status || (result.error as any)?.context?.status || 'unknown',
+    });
+    
+    return result;
   };
 
-  let result = await makeCall(session.access_token);
+  let result = await makeCall(session.access_token, 1);
 
   // Handle 401 with one retry after refresh
   if (result.error) {
     const responseObj = result.response as Response | undefined;
     const errorContext = (result.error as any)?.context as Response | undefined;
     const status = responseObj?.status ?? errorContext?.status;
-    const timestamp = new Date().toISOString();
     
-    console.log(`[invokeWithAuth] [${timestamp}] Error detected for ${functionName}, status=${status}`, { 
+    console.log(`[invokeWithAuth] [${timestamp}] [${callId}] Error detected`, { 
+      status: status || 'unknown',
       hasResponse: !!responseObj, 
       hasContext: !!errorContext,
       errorName: result.error?.name,
-      tokenUsed: session.access_token?.slice(0, 20) + '...'
+      errorMessage: result.error?.message?.slice(0, 200) || 'none',
+      tokenUsed: session.access_token?.slice(0, 20) + '...',
+      responseHeaders: responseObj?.headers ? Object.fromEntries(responseObj.headers.entries()) : 'none',
     });
     
     if (status === 401) {
-      console.log(`[invokeWithAuth] [${timestamp}] Got 401, attempting token refresh...`);
+      console.log(`[invokeWithAuth] [${timestamp}] [${callId}] Got 401, attempting token refresh...`);
+      
+      // Try to get response body for more details
+      if (responseObj) {
+        try {
+          const cloned = responseObj.clone();
+          const bodyText = await cloned.text();
+          console.log(`[invokeWithAuth] [${timestamp}] [${callId}] 401 response body:`, bodyText.slice(0, 500));
+        } catch (e) {
+          console.log(`[invokeWithAuth] [${timestamp}] [${callId}] Could not read response body:`, e);
+        }
+      }
       
       // Refresh and get the NEW session directly from the refresh response
       const { session: refreshedSession, success } = await tryRefreshSession();
       
       if (success && refreshedSession) {
-        console.log(`[invokeWithAuth] [${timestamp}] Token refreshed, new token prefix: ${refreshedSession.access_token?.slice(0, 20)}..., retrying call...`);
+        console.log(`[invokeWithAuth] [${timestamp}] [${callId}] Token refreshed successfully, retrying call...`, {
+          newTokenPrefix: refreshedSession.access_token?.slice(0, 30) + '...',
+        });
         
         // Use the fresh token directly from refresh, not from getSession()
-        result = await makeCall(refreshedSession.access_token);
+        result = await makeCall(refreshedSession.access_token, 2);
         
         if (result.error) {
-          const retryStatus = (result.response as Response)?.status;
-          console.log(`[invokeWithAuth] [${timestamp}] Retry failed: ${retryStatus ? `status ${retryStatus}` : 'error'}`);
+          const retryResponseObj = result.response as Response | undefined;
+          const retryStatus = retryResponseObj?.status ?? (result.error as any)?.context?.status;
+          console.error(`[invokeWithAuth] [${timestamp}] [${callId}] Retry also failed`, {
+            status: retryStatus || 'unknown',
+            errorName: result.error?.name,
+            errorMessage: result.error?.message?.slice(0, 200) || 'none',
+          });
+          
+          // Try to get retry response body
+          if (retryResponseObj) {
+            try {
+              const cloned = retryResponseObj.clone();
+              const bodyText = await cloned.text();
+              console.error(`[invokeWithAuth] [${timestamp}] [${callId}] Retry response body:`, bodyText.slice(0, 500));
+            } catch (e) {
+              console.log(`[invokeWithAuth] [${timestamp}] [${callId}] Could not read retry response body:`, e);
+            }
+          }
         } else {
-          console.log(`[invokeWithAuth] [${timestamp}] Retry succeeded after token refresh`);
+          console.log(`[invokeWithAuth] [${timestamp}] [${callId}] Retry succeeded after token refresh!`);
         }
       } else {
-        console.log(`[invokeWithAuth] [${timestamp}] Token refresh failed, cannot retry`);
+        console.error(`[invokeWithAuth] [${timestamp}] [${callId}] Token refresh failed, cannot retry`);
       }
     }
   }
@@ -194,6 +302,14 @@ export async function invokeWithAuth<T = any>(
     }
 
     // Log detailed error info
+    console.error(`[invokeWithAuth] [${timestamp}] [${callId}] Final error processing`, {
+      functionName,
+      httpStatus: (effectiveError as any)?.context?.status ?? (result.response as any)?.status,
+      errorMessage: effectiveError?.message?.slice(0, 300) || 'none',
+      backendCode: (effectiveError as any)?.backendCode || 'none',
+      requestId: (effectiveError as any)?.requestId || timer.requestId || 'none',
+    });
+    
     debugError("invokeWithAuth", `${functionName} failed`, effectiveError, {
       requestId: timer.requestId,
       functionName,
@@ -231,6 +347,11 @@ export async function invokeWithAuth<T = any>(
 
     return { data: null, error: effectiveError };
   }
+
+  console.log(`[invokeWithAuth] [${timestamp}] [${callId}] Call succeeded`, {
+    hasData: !!result.data,
+    dataType: result.data ? typeof result.data : "null",
+  });
 
   timer.success("OK", {
     hasData: !!result.data,
