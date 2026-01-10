@@ -111,25 +111,21 @@ serve(async (req) => {
     });
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    // Use SERVICE_ROLE_KEY like the other functions for proper token validation
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     
     console.log(`[${requestId}] Creating Supabase client:`, {
       url: supabaseUrl,
-      hasAnonKey: !!supabaseKey,
-      anonKeyPrefix: supabaseKey?.slice(0, 20) + '...' || 'none',
+      hasServiceKey: !!supabaseKey,
+      serviceKeyPrefix: supabaseKey?.slice(0, 20) + '...' || 'none',
     });
     
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      global: { headers: { Authorization: authHeader } }
-    });
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
-<<<<<<< HEAD
-    console.log(`[${requestId}] Calling supabase.auth.getUser()...`);
-=======
     console.log(`[${requestId}] Calling getUser() to validate token...`);
     const getUserStart = Date.now();
->>>>>>> c633333 (Enhance authentication logging and error handling)
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    // Pass token directly to getUser() like the other functions do
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     const getUserDuration = Date.now() - getUserStart;
     
     console.log(`[${requestId}] getUser() result (${getUserDuration}ms):`, {
