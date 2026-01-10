@@ -71,9 +71,20 @@ async function validateSession(): Promise<boolean> {
  */
 async function tryRefreshSession(): Promise<boolean> {
   try {
+    console.log(`[authHelpers] Attempting to refresh session...`);
     const { data, error } = await supabase.auth.refreshSession();
-    return !!data.session && !error;
-  } catch {
+    if (error) {
+      console.log(`[authHelpers] Refresh failed:`, error.message);
+      return false;
+    }
+    if (!data.session) {
+      console.log(`[authHelpers] Refresh returned no session`);
+      return false;
+    }
+    console.log(`[authHelpers] Session refreshed successfully`);
+    return true;
+  } catch (e: any) {
+    console.log(`[authHelpers] Refresh exception:`, e?.message);
     return false;
   }
 }
@@ -147,8 +158,17 @@ export async function invokeWithAuth<T = any>(
 
   // Handle 401 with one retry after refresh
   if (result.error) {
-    const status = (result.error as any)?.context?.status || 
-                   (result.response as any)?.status;
+    // FunctionsHttpError stores Response in context, and result.response is the same
+    // We need to check the actual Response object's status property
+    const responseObj = result.response as Response | undefined;
+    const errorContext = (result.error as any)?.context as Response | undefined;
+    const status = responseObj?.status ?? errorContext?.status;
+    
+    console.log(`[invokeWithAuth] Error detected, status=${status}`, { 
+      hasResponse: !!responseObj, 
+      hasContext: !!errorContext,
+      errorName: result.error?.name 
+    });
     
     if (status === 401) {
       console.log(`[invokeWithAuth] Got 401, attempting token refresh...`);
@@ -157,9 +177,19 @@ export async function invokeWithAuth<T = any>(
       if (refreshed) {
         const { data: { session: newSession } } = await supabase.auth.getSession();
         if (newSession) {
-          console.log(`[invokeWithAuth] Token refreshed, retrying call...`);
+          console.log(`[invokeWithAuth] Token refreshed successfully, retrying call...`);
           result = await makeCall(newSession.access_token);
+          
+          // Check if retry also failed
+          if (result.error) {
+            const retryStatus = (result.response as Response)?.status;
+            console.log(`[invokeWithAuth] Retry result: ${retryStatus ? `status ${retryStatus}` : 'error'}`);
+          }
+        } else {
+          console.log(`[invokeWithAuth] Session refresh succeeded but no new session available`);
         }
+      } else {
+        console.log(`[invokeWithAuth] Token refresh failed`);
       }
     }
   }
