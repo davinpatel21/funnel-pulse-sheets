@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileSpreadsheet, Loader2, CheckCircle2, AlertCircle, Radio, Sparkles } from "lucide-react";
+import { invokeWithAuth } from "@/lib/authHelpers";
+import { debugLog, debugError, createTimedOperation, formatErrorForDisplay } from "@/lib/debugLogger";
 import {
   Select,
   SelectContent,
@@ -58,6 +60,7 @@ interface TabAnalysis {
   analysis: AnalysisResult | null;
   mappings: Mapping[];
   error?: string;
+  debugInfo?: { requestId?: string; rawError?: string };
 }
 
 interface GoogleSheetsImportProps {
@@ -134,12 +137,34 @@ export function GoogleSheetsImport({
     const tab = tabAnalyses[index].tab;
     const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${tab.sheetId}`;
 
+    const timer = createTimedOperation('GoogleSheetsImport', `analyze tab ${tab.title}`);
+    debugLog('GoogleSheetsImport', `Analyzing tab ${index + 1}/${tabAnalyses.length}`, {
+      tabTitle: tab.title,
+      sheetId: tab.sheetId,
+      gid: tab.sheetId,
+      sheetUrl,
+    });
+
     try {
-      const { data, error } = await supabase.functions.invoke('google-sheets-import?action=analyze', {
+      // Use invokeWithAuth for consistent error handling and logging
+      const { data, error } = await invokeWithAuth('google-sheets-import?action=analyze', {
         body: { sheetUrl },
       });
 
-      if (error) throw error;
+      if (error) {
+        debugError('GoogleSheetsImport', `Analysis failed for tab ${tab.title}`, error, {
+          tabIndex: index,
+          tabTitle: tab.title,
+          requestId: (error as any).requestId,
+        });
+        throw error;
+      }
+
+      timer.success(`Analyzed as ${data.sheet_type}`, {
+        headers: data.headers?.length,
+        rowCount: data.totalRows,
+        mappings: data.analysis?.mappings?.length,
+      });
 
       setTabAnalyses(prev => {
         const updated = [...prev];
@@ -154,11 +179,20 @@ export function GoogleSheetsImport({
       // Analyze next tab
       analyzeNextTab(index + 1);
     } catch (error: any) {
+      const errorMessage = formatErrorForDisplay(error);
+      const requestId = error.requestId;
+      
+      debugError('GoogleSheetsImport', `Tab analysis exception`, error, {
+        tabIndex: index,
+        tabTitle: tab.title,
+      });
+      
       setTabAnalyses(prev => {
         const updated = [...prev];
         updated[index] = {
           ...updated[index],
-          error: error.message,
+          error: errorMessage,
+          debugInfo: { requestId, rawError: error.message },
         };
         return updated;
       });

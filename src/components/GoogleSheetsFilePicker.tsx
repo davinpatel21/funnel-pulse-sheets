@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, FileSpreadsheet, Search, FolderOpen, ChevronRight, Table2, Sparkles } from "lucide-react";
 import { invokeWithAuth } from "@/lib/authHelpers";
 import { formatDistanceToNow } from "date-fns";
+import { debugLog, debugError, createTimedOperation, formatErrorForDisplay } from "@/lib/debugLogger";
 
 interface SpreadsheetFile {
   id: string;
@@ -59,9 +60,21 @@ export function GoogleSheetsFilePicker({ onSelect, isLoading }: GoogleSheetsFile
   } = useQuery({
     queryKey: ['google-sheets-list'],
     queryFn: async () => {
+      const timer = createTimedOperation('GoogleSheetsFilePicker', 'list spreadsheets');
+      debugLog('GoogleSheetsFilePicker', 'Fetching spreadsheet list');
+      
       const { data, error } = await invokeWithAuth('google-sheets-list');
-      if (error) throw error;
-      return data?.files as SpreadsheetFile[] || [];
+      
+      if (error) {
+        debugError('GoogleSheetsFilePicker', 'Failed to list spreadsheets', error, {
+          requestId: (error as any).requestId,
+        });
+        throw error;
+      }
+      
+      const files = data?.files as SpreadsheetFile[] || [];
+      timer.success(`Found ${files.length} spreadsheets`);
+      return files;
     },
   });
 
@@ -74,11 +87,25 @@ export function GoogleSheetsFilePicker({ onSelect, isLoading }: GoogleSheetsFile
     queryKey: ['google-sheets-tabs', selectedSpreadsheet?.id],
     queryFn: async () => {
       if (!selectedSpreadsheet) return null;
+      
+      const timer = createTimedOperation('GoogleSheetsFilePicker', `tabs for ${selectedSpreadsheet.name}`);
+      debugLog('GoogleSheetsFilePicker', 'Fetching tabs', { spreadsheetId: selectedSpreadsheet.id });
+      
       const { data, error } = await invokeWithAuth(
         `google-sheets-tabs?spreadsheetId=${selectedSpreadsheet.id}`
       );
-      if (error) throw error;
-      return data as { spreadsheetId: string; title: string; sheets: SheetTab[] };
+      
+      if (error) {
+        debugError('GoogleSheetsFilePicker', 'Failed to fetch tabs', error, {
+          spreadsheetId: selectedSpreadsheet.id,
+          requestId: (error as any).requestId,
+        });
+        throw error;
+      }
+      
+      const result = data as { spreadsheetId: string; title: string; sheets: SheetTab[] };
+      timer.success(`Found ${result?.sheets?.length || 0} tabs`);
+      return result;
     },
     enabled: !!selectedSpreadsheet,
   });
@@ -147,7 +174,9 @@ export function GoogleSheetsFilePicker({ onSelect, isLoading }: GoogleSheetsFile
 
   // Error state
   if (filesError) {
-    const errorMessage = filesError instanceof Error ? filesError.message : 'Failed to load spreadsheets';
+    const errorMessage = filesError instanceof Error ? formatErrorForDisplay(filesError) : 'Failed to load spreadsheets';
+    const requestId = (filesError as any)?.requestId;
+    
     return (
       <Card>
         <CardHeader>
@@ -159,6 +188,11 @@ export function GoogleSheetsFilePicker({ onSelect, isLoading }: GoogleSheetsFile
         <CardContent>
           <div className="text-center py-8 space-y-4">
             <p className="text-destructive">{errorMessage}</p>
+            {requestId && (
+              <p className="text-xs text-muted-foreground font-mono">
+                Request ID: {requestId}
+              </p>
+            )}
             {errorMessage.includes('reconnect') && (
               <p className="text-sm text-muted-foreground">
                 You may need to disconnect and reconnect your Google account with updated permissions.

@@ -13,32 +13,75 @@ type ErrorCode =
   | 'CONFIG_NOT_FOUND'
   | 'INVALID_SHEET_URL'
   | 'SHEET_ACCESS_DENIED'
+  | 'GOOGLE_API_ERROR'
   | 'INVALID_REQUEST'
   | 'INTERNAL_ERROR';
 
 function errorResponse(
+  requestId: string,
   message: string, 
   code: ErrorCode, 
   status: number,
   details?: string
 ): Response {
-  console.error(`Error [${code}]: ${message}`, details ? `- ${details}` : '');
+  console.error(`[${requestId}] Error [${code}]: ${message}`, details ? `- ${details}` : '');
   return new Response(
     JSON.stringify({ 
+      requestId,
       error: message, 
       code, 
       status,
-      ...(details && { details })
+      ...(details && { details: details.slice(0, 500) })
     }),
     { 
       status, 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      headers: { 
+        ...corsHeaders, 
+        'Content-Type': 'application/json',
+        'x-request-id': requestId,
+      } 
     }
   );
 }
 
+function successResponse(requestId: string, data: any): Response {
+  return new Response(
+    JSON.stringify({ ...data, requestId }),
+    { 
+      headers: { 
+        ...corsHeaders, 
+        'Content-Type': 'application/json',
+        'x-request-id': requestId,
+      } 
+    }
+  );
+}
+
+// Timed fetch wrapper for debugging
+async function fetchWithDebug(
+  requestId: string,
+  target: string,
+  url: string,
+  options: RequestInit
+): Promise<Response> {
+  const start = Date.now();
+  console.log(`[${requestId}] → ${target}: ${options.method || 'GET'} ${url.slice(0, 100)}...`);
+  
+  try {
+    const response = await fetch(url, options);
+    const duration = Date.now() - start;
+    console.log(`[${requestId}] ← ${target}: ${response.status} (${duration}ms)`);
+    return response;
+  } catch (error) {
+    const duration = Date.now() - start;
+    console.error(`[${requestId}] ✗ ${target}: Network error after ${duration}ms`, error);
+    throw error;
+  }
+}
+
 // Refresh Google OAuth access token
 async function refreshAccessToken(
+  requestId: string,
   supabase: any, 
   userId: string, 
   credentials: any
@@ -50,18 +93,27 @@ async function refreshAccessToken(
     throw new Error('Google OAuth not configured');
   }
 
-  const response = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: credentials.refresh_token,
-      grant_type: 'refresh_token',
-    }),
-  });
+  console.log(`[${requestId}] Refreshing access token...`);
+
+  const response = await fetchWithDebug(
+    requestId,
+    'Google OAuth',
+    'https://oauth2.googleapis.com/token',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: credentials.refresh_token,
+        grant_type: 'refresh_token',
+      }),
+    }
+  );
 
   if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[${requestId}] Token refresh failed:`, errorText.slice(0, 300));
     throw new Error('Failed to refresh Google credentials');
   }
 
@@ -76,11 +128,12 @@ async function refreshAccessToken(
     })
     .eq('user_id', userId);
 
+  console.log(`[${requestId}] Token refreshed successfully`);
   return tokens.access_token;
 }
 
 // Get valid access token (refresh if needed)
-async function getValidAccessToken(supabase: any, userId: string): Promise<string | null> {
+async function getValidAccessToken(requestId: string, supabase: any, userId: string): Promise<string | null> {
   const { data: credentials, error } = await supabase
     .from('google_sheets_credentials')
     .select('*')
@@ -88,6 +141,7 @@ async function getValidAccessToken(supabase: any, userId: string): Promise<strin
     .single();
 
   if (error || !credentials) {
+    console.log(`[${requestId}] No Google credentials found`);
     return null;
   }
 
@@ -96,17 +150,20 @@ async function getValidAccessToken(supabase: any, userId: string): Promise<strin
 
   if (expiresAt <= now) {
     try {
-      return await refreshAccessToken(supabase, userId, credentials);
-    } catch {
+      return await refreshAccessToken(requestId, supabase, userId, credentials);
+    } catch (e) {
+      console.log(`[${requestId}] Token refresh failed, will try public fallback`);
       return null;
     }
   }
 
+  console.log(`[${requestId}] Using existing valid access token`);
   return credentials.access_token;
 }
 
 // Fetch sheet data using OAuth (for private sheets)
 async function fetchSheetDataWithOAuth(
+  requestId: string,
   accessToken: string,
   spreadsheetId: string,
   gid?: string
@@ -114,12 +171,15 @@ async function fetchSheetDataWithOAuth(
   try {
     // Get sheet name from gid
     const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties(sheetId,title))`;
-    const metaResponse = await fetch(metaUrl, {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
+    const metaResponse = await fetchWithDebug(
+      requestId,
+      'Google Sheets Meta',
+      metaUrl,
+      { headers: { 'Authorization': `Bearer ${accessToken}` } }
+    );
 
     if (!metaResponse.ok) {
-      console.log('OAuth metadata fetch failed:', metaResponse.status);
+      console.log(`[${requestId}] OAuth metadata fetch failed: ${metaResponse.status}`);
       return null;
     }
 
@@ -131,26 +191,34 @@ async function fetchSheetDataWithOAuth(
       const sheet = sheets.find((s: any) => String(s.properties.sheetId) === gid);
       if (sheet) {
         sheetName = sheet.properties.title;
+        console.log(`[${requestId}] Using sheet: "${sheetName}" (gid=${gid})`);
       }
     } else if (sheets.length > 0) {
       sheetName = sheets[0].properties.title;
+      console.log(`[${requestId}] Using first sheet: "${sheetName}"`);
     }
 
     // Fetch data
     const sheetsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`'${sheetName}'`)}`;
-    const response = await fetch(sheetsUrl, {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
+    const response = await fetchWithDebug(
+      requestId,
+      'Google Sheets Data',
+      sheetsUrl,
+      { headers: { 'Authorization': `Bearer ${accessToken}` } }
+    );
 
     if (!response.ok) {
-      console.log('OAuth data fetch failed:', response.status);
+      console.log(`[${requestId}] OAuth data fetch failed: ${response.status}`);
       return null;
     }
 
     const data = await response.json();
     const values = data.values || [];
     
-    if (values.length === 0) return [];
+    if (values.length === 0) {
+      console.log(`[${requestId}] Sheet is empty`);
+      return [];
+    }
 
     // Convert to objects
     const headers = values[0];
@@ -164,15 +232,18 @@ async function fetchSheetDataWithOAuth(
       rows.push(row);
     }
 
-    console.log(`Fetched ${rows.length} rows via OAuth API`);
+    console.log(`[${requestId}] OAuth fetch success: ${rows.length} rows, ${headers.length} columns`);
     return rows;
   } catch (error) {
-    console.error('OAuth fetch error:', error);
+    console.error(`[${requestId}] OAuth fetch exception:`, error);
     return null;
   }
 }
 
 serve(async (req) => {
+  const requestId = crypto.randomUUID();
+  const startTime = Date.now();
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -181,11 +252,7 @@ serve(async (req) => {
     // Check authorization header
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-      return errorResponse(
-        'Please sign in to access your Google Sheets data',
-        'AUTH_REQUIRED',
-        401
-      );
+      return errorResponse(requestId, 'Please sign in to access your Google Sheets data', 'AUTH_REQUIRED', 401);
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -197,13 +264,10 @@ serve(async (req) => {
     // Validate user session
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
-      return errorResponse(
-        'Your session has expired. Please sign in again',
-        'SESSION_EXPIRED',
-        401,
-        userError?.message
-      );
+      return errorResponse(requestId, 'Your session has expired. Please sign in again', 'SESSION_EXPIRED', 401, userError?.message);
     }
+
+    console.log(`[${requestId}] Request from user: ${user.id.slice(0, 8)}...`);
 
     // Parse request body
     let configuration_id: string;
@@ -211,21 +275,15 @@ serve(async (req) => {
       const body = await req.json();
       configuration_id = body.configuration_id;
       if (!configuration_id) {
-        return errorResponse(
-          'Sheet configuration ID is required',
-          'INVALID_REQUEST',
-          400
-        );
+        return errorResponse(requestId, 'Sheet configuration ID is required', 'INVALID_REQUEST', 400);
       }
     } catch {
-      return errorResponse(
-        'Invalid request format',
-        'INVALID_REQUEST',
-        400
-      );
+      return errorResponse(requestId, 'Invalid request format', 'INVALID_REQUEST', 400);
     }
 
-    // Fetch the configuration (shared across all authenticated team members)
+    console.log(`[${requestId}] Fetching config: ${configuration_id}`);
+
+    // Fetch the configuration
     const { data: config, error: configError } = await supabase
       .from('sheet_configurations')
       .select('*')
@@ -234,89 +292,67 @@ serve(async (req) => {
       .single();
 
     if (configError || !config) {
-      return errorResponse(
-        'This sheet connection is no longer active. Please reconnect your sheet in Settings',
-        'CONFIG_NOT_FOUND',
-        404,
-        configError?.message
-      );
+      return errorResponse(requestId, 'This sheet connection is no longer active. Please reconnect your sheet in Settings', 'CONFIG_NOT_FOUND', 404, configError?.message);
     }
+
+    console.log(`[${requestId}] Config found: sheet_type=${config.sheet_type}, url=${config.sheet_url.slice(0, 50)}...`);
 
     // Extract sheet ID from URL
     const sheetId = extractSheetId(config.sheet_url);
     if (!sheetId) {
-      return errorResponse(
-        'The Google Sheet URL appears to be invalid. Please check your configuration in Settings',
-        'INVALID_SHEET_URL',
-        400
-      );
+      return errorResponse(requestId, 'The Google Sheet URL appears to be invalid. Please check your configuration in Settings', 'INVALID_SHEET_URL', 400);
     }
 
     const gid = extractGid(config.sheet_url);
     let rows: any[] | null = null;
 
+    console.log(`[${requestId}] Parsed: spreadsheetId=${sheetId}, gid=${gid || 'none'}`);
+
     // Try OAuth first (works for private sheets)
-    const accessToken = await getValidAccessToken(supabase, user.id);
+    const accessToken = await getValidAccessToken(requestId, supabase, user.id);
     if (accessToken) {
-      console.log('Attempting OAuth fetch for private sheet...');
-      rows = await fetchSheetDataWithOAuth(accessToken, sheetId, gid || undefined);
+      console.log(`[${requestId}] Attempting OAuth fetch...`);
+      rows = await fetchSheetDataWithOAuth(requestId, accessToken, sheetId, gid || undefined);
     }
 
     // Fallback to public CSV export if OAuth fails or no credentials
     if (!rows) {
-      console.log('Falling back to public CSV export...');
+      console.log(`[${requestId}] Falling back to public CSV export...`);
       let csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
       if (gid) {
         csvUrl += `&gid=${gid}`;
-        console.log(`Fetching specific tab with gid=${gid}`);
       }
       
-      const csvResponse = await fetch(csvUrl);
+      const csvResponse = await fetchWithDebug(requestId, 'Google Sheets CSV', csvUrl, { method: 'GET' });
+      
       if (!csvResponse.ok) {
         if (csvResponse.status === 404) {
-          return errorResponse(
-            'The Google Sheet could not be found. It may have been deleted or moved',
-            'SHEET_ACCESS_DENIED',
-            502
-          );
+          return errorResponse(requestId, 'The Google Sheet could not be found. It may have been deleted or moved', 'SHEET_ACCESS_DENIED', 502);
         }
-        return errorResponse(
-          'Unable to access the Google Sheet. Make sure it\'s set to "Anyone with the link can view" or connect your Google account in Settings',
-          'SHEET_ACCESS_DENIED',
-          502,
-          `Google returned status ${csvResponse.status}`
-        );
+        return errorResponse(requestId, 'Unable to access the Google Sheet. Make sure it\'s set to "Anyone with the link can view" or connect your Google account in Settings', 'SHEET_ACCESS_DENIED', 502, `Google returned status ${csvResponse.status}`);
       }
 
       const csvText = await csvResponse.text();
       
       if (csvText.includes('<!DOCTYPE html>') || csvText.includes('<html')) {
-        return errorResponse(
-          'Unable to access the Google Sheet. Make sure it\'s set to "Anyone with the link can view" or connect your Google account in Settings',
-          'SHEET_ACCESS_DENIED',
-          502,
-          'Received HTML instead of CSV data'
-        );
+        return errorResponse(requestId, 'Unable to access the Google Sheet. Make sure it\'s set to "Anyone with the link can view" or connect your Google account in Settings', 'SHEET_ACCESS_DENIED', 502, 'Received HTML instead of CSV data');
       }
       
-      console.log(`Fetched CSV from sheet ${sheetId}, length: ${csvText.length} chars`);
+      console.log(`[${requestId}] CSV fetch success: ${csvText.length} chars`);
       rows = parseCsv(csvText);
     }
     
-    console.log(`Parsed ${rows.length} rows`);
+    console.log(`[${requestId}] Parsed ${rows.length} rows`);
 
-    // Transform data based on sheet type using canonical schema
+    // Transform data based on sheet type
     const transformedData = rows.map((row, index) => {
-      // Keep track of original row number for write-back (1-indexed, +2 for header and 0-index)
       const record: any = { _rowNumber: index + 2 };
 
-      // Map all columns from the row directly
       Object.keys(row).forEach(key => {
         const normalizedKey = normalizeColumnName(key);
         record[normalizedKey] = row[key];
       });
 
-      // Apply sheet-type specific transformations
       switch (config.sheet_type) {
         case 'team':
           record.team_member_id = record.team_member_id || record.id || `team-${index}`;
@@ -369,14 +405,10 @@ serve(async (req) => {
       return record;
     });
 
-    console.log(`Transformed ${transformedData.length} records for sheet_type: ${config.sheet_type}`);
-
     // Filter out deleted/empty records
     const validRecords = transformedData.filter(record => {
-      // Skip if marked as deleted
       if (record.is_deleted === 'true' || record.is_deleted === true) return false;
       
-      // For most types, require at least name or email
       if (config.sheet_type !== 'team') {
         const hasName = record.full_name || record.lead_name || record.name;
         const hasEmail = record.email || record.lead_email;
@@ -386,7 +418,8 @@ serve(async (req) => {
       return true;
     });
 
-    console.log(`Validation: ${validRecords.length}/${transformedData.length} records valid`);
+    const duration = Date.now() - startTime;
+    console.log(`[${requestId}] Complete: ${validRecords.length}/${transformedData.length} valid records (${duration}ms)`);
 
     // Update last_synced_at
     await supabase
@@ -394,24 +427,17 @@ serve(async (req) => {
       .update({ last_synced_at: new Date().toISOString() })
       .eq('id', configuration_id);
 
-    return new Response(
-      JSON.stringify({ 
-        data: validRecords,
-        sheet_type: config.sheet_type,
-        row_count: validRecords.length 
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return successResponse(requestId, { 
+      data: validRecords,
+      sheet_type: config.sheet_type,
+      row_count: validRecords.length 
+    });
 
   } catch (error: unknown) {
-    console.error('Unexpected error in google-sheets-live:', error);
+    const duration = Date.now() - startTime;
+    console.error(`[${requestId}] Unexpected error after ${duration}ms:`, error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    return errorResponse(
-      'Something went wrong while syncing your sheet. Please try again',
-      'INTERNAL_ERROR',
-      500,
-      message
-    );
+    return errorResponse(requestId, 'Something went wrong while syncing your sheet. Please try again', 'INTERNAL_ERROR', 500, message);
   }
 });
 
@@ -434,7 +460,6 @@ function normalizeColumnName(name: string): string {
 }
 
 function combineDateTimeFields(record: any): string | null {
-  // Try to combine common date/time field patterns
   const dateField = record.appointment_date || record.date || record.booking_date;
   const timeField = record.appointment_time || record.time || record.booking_time;
   
@@ -505,30 +530,24 @@ function normalizeRole(role: string): string {
   if (r.includes('admin') || r.includes('manager')) return 'admin';
   if (r.includes('close')) return 'closer';
   if (r.includes('set')) return 'setter';
-  return 'other';
+  return 'setter';
 }
 
 function normalizeLeadStatus(status: string): string {
   const s = (status || '').toLowerCase().trim();
-  if (s.includes('new')) return 'new';
+  if (s.includes('qualified')) return 'qualified';
+  if (s.includes('unqualified')) return 'unqualified';
   if (s.includes('contact')) return 'contacted';
-  if (s.includes('book')) return 'booked';
-  if (s.includes('no') && s.includes('show')) return 'no_show';
-  if (s.includes('show')) return 'showed';
-  if (s.includes('won') || s.includes('close') || s.includes('deal')) return 'won';
-  if (s.includes('lost') || s.includes('dead')) return 'lost';
-  if (s.includes('unqual')) return 'unqualified';
   return 'new';
 }
 
 function normalizeAppointmentStatus(status: string): string {
   const s = (status || '').toLowerCase().trim();
-  if (s.includes('book') || s.includes('schedul')) return 'booked';
-  if (s.includes('resch')) return 'rescheduled';
   if (s.includes('cancel')) return 'cancelled';
   if (s.includes('no') && s.includes('show')) return 'no_show';
-  if (s.includes('complete') || s.includes('done') || s.includes('showed') || s.includes('closed')) return 'completed';
-  return 'booked';
+  if (s.includes('resch')) return 'rescheduled';
+  if (s.includes('complete') || s.includes('done') || s.includes('closed')) return 'completed';
+  return 'scheduled';
 }
 
 function normalizeCallStatus(status: string): string {
@@ -536,7 +555,6 @@ function normalizeCallStatus(status: string): string {
   if (s.includes('connect') || s.includes('live') || s.includes('answer')) return 'connected';
   if (s.includes('no') && s.includes('answer')) return 'no_answer';
   if (s.includes('voice') || s.includes('vm')) return 'voicemail';
-  if (s.includes('resch')) return 'rescheduled';
   if (s.includes('complete') || s.includes('done')) return 'completed';
   return 'connected';
 }
