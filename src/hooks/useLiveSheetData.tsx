@@ -33,6 +33,11 @@ export function useLiveSheetData<T = any>(sheetType: SheetType): LiveSheetDataRe
       
       if (error) {
         console.error('Error fetching sheet data:', error);
+        // Check for auth-related errors and provide user-friendly message
+        const errorMessage = error.message || '';
+        if (errorMessage.includes('authorization') || errorMessage.includes('AUTH_REQUIRED') || errorMessage.includes('SESSION_EXPIRED')) {
+          throw new Error('Please sign in to access your data');
+        }
         throw error;
       }
       

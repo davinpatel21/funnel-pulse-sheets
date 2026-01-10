@@ -25,9 +25,14 @@ export function useLiveSheetMetrics(configs: any[], filters: DashboardFilters = 
           });
           
           if (error) {
+            const errorMessage = error.message || '';
+            // Check for auth-related errors
+            if (errorMessage.includes('authorization') || errorMessage.includes('AUTH_REQUIRED') || errorMessage.includes('SESSION_EXPIRED')) {
+              console.warn(`Auth error fetching sheet ${config.id}: Please sign in`);
+              return { sheet_type: config.sheet_type, data: [], error: 'Please sign in to access your data' };
+            }
             console.error(`Error fetching sheet ${config.id}:`, error);
-            console.error('Error details:', JSON.stringify(error, null, 2));
-            return { sheet_type: config.sheet_type, data: [], error: error.message || 'Unknown error' };
+            return { sheet_type: config.sheet_type, data: [], error: errorMessage || 'Unknown error' };
           }
           
           if (!data) {
