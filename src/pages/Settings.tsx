@@ -1,20 +1,42 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { RefreshCw, FileSpreadsheet, CheckCircle2, Sparkles, ShieldCheck } from "lucide-react";
+import { RefreshCw, FileSpreadsheet, CheckCircle2, Sparkles, ShieldCheck, ArrowLeft } from "lucide-react";
 import { GoogleSheetsOAuth } from "@/components/GoogleSheetsOAuth";
+import { GoogleSheetsFilePicker } from "@/components/GoogleSheetsFilePicker";
+import { GoogleSheetsImport } from "@/components/GoogleSheetsImport";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { TeamInviteForm } from "@/components/TeamInviteForm";
 import { invokeWithAuth } from "@/lib/authHelpers";
+import { supabase } from "@/integrations/supabase/client";
+
+type ImportMode = 'none' | 'picker' | 'analyze';
+
+interface SelectedSheet {
+  spreadsheetId: string;
+  spreadsheetName: string;
+  sheetId: number;
+  sheetTitle: string;
+}
 
 export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { status, hasCredentials, hasSheetConfigs } = useSyncStatus();
   const { isAdmin, isLoading: isAdminLoading } = useIsAdmin();
+  const [importMode, setImportMode] = useState<ImportMode>('none');
+  const [selectedSheet, setSelectedSheet] = useState<SelectedSheet | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  // Get user ID for sheet configuration
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUserId(session?.user?.id || null);
+    });
+  }, []);
 
   // Handle OAuth success/error from redirect
   useEffect(() => {
@@ -24,9 +46,10 @@ export default function Settings() {
     if (oauthResult === 'success') {
       toast({
         title: "Connected!",
-        description: "Google Sheets connected successfully. You can now create your tracker sheet.",
+        description: "Google Sheets connected successfully. You can now select a spreadsheet to sync.",
       });
       queryClient.invalidateQueries({ queryKey: ['google-sheets-credentials'] });
+      queryClient.invalidateQueries({ queryKey: ['google-sheets-list'] });
       // Clean up URL
       window.history.replaceState({}, '', '/settings');
     } else if (oauthResult === 'error') {
@@ -73,6 +96,7 @@ export default function Settings() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['sheet-configurations'] });
+      queryClient.invalidateQueries({ queryKey: ['google-sheets-list'] });
       toast({ 
         title: "Sheet created successfully!", 
         description: `Created "${data.message}" - Opening in new tab...`
@@ -89,6 +113,21 @@ export default function Settings() {
       });
     },
   });
+
+  const handleSheetSelect = (spreadsheetId: string, spreadsheetName: string, sheetId: number, sheetTitle: string) => {
+    setSelectedSheet({ spreadsheetId, spreadsheetName, sheetId, sheetTitle });
+    setImportMode('analyze');
+  };
+
+  const handleBackToPicker = () => {
+    setSelectedSheet(null);
+    setImportMode('picker');
+  };
+
+  const handleBackToOptions = () => {
+    setSelectedSheet(null);
+    setImportMode('none');
+  };
 
   if (isAdminLoading) {
     return (
@@ -171,30 +210,113 @@ export default function Settings() {
         {/* Google Sheets Connection */}
         <GoogleSheetsOAuth />
 
-        {/* Create Sheet Card - Show when credentials exist but no sheets configured */}
+        {/* Show file picker / import flow when connected but no sheets configured */}
         {hasCredentials && !hasSheetConfigs && (
-          <Card className="border-2 border-dashed border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
-            <CardHeader className="text-center pb-2">
-              <div className="mx-auto mb-4 relative">
-                <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl" />
-                <div className="relative bg-card border rounded-xl p-4">
-                  <Sparkles className="h-8 w-8 text-primary" />
-                </div>
+          <>
+            {importMode === 'none' && (
+              <div className="space-y-4">
+                {/* Create New Sheet Option */}
+                <Card className="border-2 border-dashed border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
+                  <CardHeader className="text-center pb-2">
+                    <div className="mx-auto mb-4 relative">
+                      <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl" />
+                      <div className="relative bg-card border rounded-xl p-4">
+                        <Sparkles className="h-8 w-8 text-primary" />
+                      </div>
+                    </div>
+                    <CardTitle className="text-2xl">Create New Tracker Sheet</CardTitle>
+                    <CardDescription className="text-base">
+                      We'll create a new Google Sheet with all the tabs you need: Team, Leads, Appointments, Calls, and Deals.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex justify-center pt-4">
+                    <Button 
+                      onClick={() => createSheetMutation.mutate()}
+                      disabled={createSheetMutation.isPending}
+                      size="lg"
+                      className="gap-2"
+                    >
+                      <FileSpreadsheet className="h-5 w-5" />
+                      {createSheetMutation.isPending ? 'Creating...' : 'Create New Tracker Sheet'}
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {/* Select Existing Sheet Option */}
+                <Card>
+                  <CardHeader className="text-center pb-2">
+                    <CardTitle className="text-xl">Or Connect Existing Spreadsheet</CardTitle>
+                    <CardDescription>
+                      Have an existing spreadsheet? Select it and our AI will automatically map your columns.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex justify-center pt-4">
+                    <Button 
+                      onClick={() => setImportMode('picker')}
+                      variant="outline"
+                      size="lg"
+                      className="gap-2"
+                    >
+                      <FileSpreadsheet className="h-5 w-5" />
+                      Browse My Spreadsheets
+                    </Button>
+                  </CardContent>
+                </Card>
               </div>
-              <CardTitle className="text-2xl">Create Your Tracker Sheet</CardTitle>
-              <CardDescription className="text-base">
-                We'll create a new Google Sheet with all the tabs you need: Team, Leads, Appointments, Calls, and Deals.
+            )}
+
+            {importMode === 'picker' && (
+              <div className="space-y-4">
+                <Button 
+                  variant="ghost" 
+                  onClick={handleBackToOptions}
+                  className="gap-2"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to options
+                </Button>
+                <GoogleSheetsFilePicker onSelect={handleSheetSelect} />
+              </div>
+            )}
+
+            {importMode === 'analyze' && selectedSheet && (
+              <div className="space-y-4">
+                <Button 
+                  variant="ghost" 
+                  onClick={handleBackToPicker}
+                  className="gap-2"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to file picker
+                </Button>
+                <GoogleSheetsImport 
+                  spreadsheetId={selectedSheet.spreadsheetId}
+                  spreadsheetName={selectedSheet.spreadsheetName}
+                  sheetId={selectedSheet.sheetId}
+                  sheetTitle={selectedSheet.sheetTitle}
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Add another sheet button when already connected */}
+        {hasCredentials && hasSheetConfigs && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Add Another Spreadsheet</CardTitle>
+              <CardDescription>
+                Connect additional spreadsheets to sync more data
               </CardDescription>
             </CardHeader>
-            <CardContent className="flex justify-center pt-4">
+            <CardContent>
               <Button 
-                onClick={() => createSheetMutation.mutate()}
-                disabled={createSheetMutation.isPending}
-                size="lg"
+                onClick={() => setImportMode('picker')}
+                variant="outline"
                 className="gap-2"
               >
-                <FileSpreadsheet className="h-5 w-5" />
-                {createSheetMutation.isPending ? 'Creating...' : 'Create New Tracker Sheet'}
+                <FileSpreadsheet className="h-4 w-4" />
+                Browse My Spreadsheets
               </Button>
             </CardContent>
           </Card>
