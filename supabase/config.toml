@@ -20,3 +20,9 @@ verify_jwt = false
 
 [functions.google-sheets-create]
 verify_jwt = false
+
+[functions.google-sheets-list]
+verify_jwt = false
+
+[functions.google-sheets-tabs]
+verify_jwt = false

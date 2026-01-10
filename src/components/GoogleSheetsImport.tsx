@@ -50,15 +50,34 @@ interface AnalysisResult {
   sampleRows: any[];
 }
 
-export function GoogleSheetsImport() {
-  const [sheetUrl, setSheetUrl] = useState("");
-  const [sheetName, setSheetName] = useState("");
+interface GoogleSheetsImportProps {
+  spreadsheetId?: string;
+  spreadsheetName?: string;
+  sheetId?: number;
+  sheetTitle?: string;
+}
+
+export function GoogleSheetsImport({ 
+  spreadsheetId, 
+  spreadsheetName, 
+  sheetId, 
+  sheetTitle 
+}: GoogleSheetsImportProps = {}) {
+  // If props provided, construct URL from them
+  const initialUrl = spreadsheetId 
+    ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit${sheetId !== undefined ? `#gid=${sheetId}` : ''}`
+    : "";
+  const initialSheetName = sheetTitle || "";
+  
+  const [sheetUrl, setSheetUrl] = useState(initialUrl);
+  const [sheetName, setSheetName] = useState(initialSheetName);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [mappings, setMappings] = useState<Mapping[]>([]);
   const [importResult, setImportResult] = useState<any>(null);
   const [sheetType, setSheetType] = useState<string>('leads');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [autoAnalyzed, setAutoAnalyzed] = useState(false);
   const { toast } = useToast();
 
   // Check authentication status
@@ -75,6 +94,14 @@ export function GoogleSheetsImport() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Auto-analyze when spreadsheet props are provided
+  useEffect(() => {
+    if (spreadsheetId && sheetUrl && isLoggedIn && !autoAnalyzed && !analysisResult) {
+      setAutoAnalyzed(true);
+      analyzeMutation.mutate(sheetUrl);
+    }
+  }, [spreadsheetId, sheetUrl, isLoggedIn, autoAnalyzed, analysisResult]);
 
   const analyzeMutation = useMutation({
     mutationFn: async (url: string) => {
