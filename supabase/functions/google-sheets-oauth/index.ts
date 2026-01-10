@@ -33,38 +33,28 @@ Deno.serve(async (req) => {
     const clientId = Deno.env.get('GOOGLE_SHEETS_CLIENT_ID');
     const clientSecret = Deno.env.get('GOOGLE_SHEETS_CLIENT_SECRET');
 
+    // Detailed diagnostic logging
+    console.log('=== OAuth Config Debug ===');
+    console.log('Path:', path);
+    console.log('Client ID exists:', !!clientId);
+    console.log('Client ID length:', clientId?.length || 0);
+    console.log('Client ID preview:', clientId ? `${clientId.substring(0, 30)}...` : 'NOT SET');
+    console.log('Client Secret exists:', !!clientSecret);
+    console.log('Client Secret length:', clientSecret?.length || 0);
+    console.log('Client Secret preview:', clientSecret ? `${clientSecret.substring(0, 10)}...` : 'NOT SET');
+    console.log('Supabase URL:', supabaseUrl);
+
     if (!clientId || !clientSecret) {
+      console.error('MISSING CREDENTIALS - clientId:', !!clientId, 'clientSecret:', !!clientSecret);
       return errorResponse(
-        'Google OAuth credentials not configured. Please contact your administrator.',
+        'Google OAuth credentials not configured. Please add GOOGLE_SHEETS_CLIENT_ID and GOOGLE_SHEETS_CLIENT_SECRET secrets.',
         'CONFIG_ERROR',
         500
       );
     }
 
-    // Determine redirect URI - support localhost for local development
-    // Check if request is coming from localhost
-    const requestOrigin = req.headers.get('origin') || req.headers.get('referer') || '';
-    const isLocalhost = requestOrigin.includes('localhost') || requestOrigin.includes('127.0.0.1') || 
-                       url.hostname === 'localhost' || url.hostname === '127.0.0.1';
-    
-    // Allow override via environment variable, or detect localhost
-    const localCallbackUrl = Deno.env.get('LOCAL_CALLBACK_URL');
-    let redirectUri: string;
-    
-    if (isLocalhost && localCallbackUrl) {
-      // Use explicit local callback URL if provided
-      redirectUri = localCallbackUrl;
-    } else if (isLocalhost) {
-      // Default localhost callback (assumes Supabase CLI is running on default port)
-      redirectUri = `http://127.0.0.1:54321/functions/v1/google-sheets-oauth/callback`;
-    } else {
-      // Production callback
-      redirectUri = `${supabaseUrl}/functions/v1/google-sheets-oauth/callback`;
-    }
-
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/5a1857ea-8661-4f82-a825-26d587272163',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-sheets-oauth/index.ts:44',message:'OAuth config - redirect URI construction',data:{supabaseUrl,redirectUri,isLocalhost,requestOrigin,hasClientId:!!clientId,hasClientSecret:!!clientSecret},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C,D'})}).catch(()=>{});
-    // #endregion
+    const redirectUri = `${supabaseUrl}/functions/v1/google-sheets-oauth/callback`;
+    console.log('Redirect URI:', redirectUri);
 
     // Route: Initiate OAuth flow
     if (path === 'initiate') {
@@ -104,6 +94,10 @@ Deno.serve(async (req) => {
       authUrl.searchParams.set('prompt', 'consent');
       authUrl.searchParams.set('state', state);
 
+      console.log('OAuth initiate - User:', user.id);
+      console.log('OAuth initiate - Redirect Origin:', redirectOrigin);
+      console.log('OAuth initiate - Auth URL client_id:', authUrl.searchParams.get('client_id'));
+
       return new Response(
         JSON.stringify({ authUrl: authUrl.toString() }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -116,9 +110,10 @@ Deno.serve(async (req) => {
       const state = url.searchParams.get('state');
       const errorParam = url.searchParams.get('error');
 
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/5a1857ea-8661-4f82-a825-26d587272163',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-sheets-oauth/index.ts:91',message:'OAuth callback - entry',data:{hasCode:!!code,codeLength:code?.length,hasState:!!state,stateLength:state?.length,errorParam,fullUrl:url.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
+      console.log('=== OAuth Callback Debug ===');
+      console.log('Has code:', !!code);
+      console.log('Has state:', !!state);
+      console.log('Error param:', errorParam);
 
       // Handle Google OAuth errors (user denied, etc.)
       if (errorParam) {
@@ -157,21 +152,19 @@ Deno.serve(async (req) => {
         const decoded = JSON.parse(atob(state));
         userId = decoded.userId;
         redirectOrigin = decoded.redirectOrigin;
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/5a1857ea-8661-4f82-a825-26d587272163',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-sheets-oauth/index.ts:130',message:'State decoded successfully',data:{userId,hasRedirectOrigin:!!redirectOrigin,redirectOrigin},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
+        console.log('Decoded state - userId:', userId);
+        console.log('Decoded state - redirectOrigin:', redirectOrigin);
       } catch (e) {
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/5a1857ea-8661-4f82-a825-26d587272163',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-sheets-oauth/index.ts:134',message:'State decode failed',data:{error:String(e),stateLength:state?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
+        console.error('Failed to decode state:', e);
         return errorResponse('Invalid state parameter', 'INVALID_STATE', 400);
       }
 
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/5a1857ea-8661-4f82-a825-26d587272163',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-sheets-oauth/index.ts:137',message:'Token exchange - BEFORE request',data:{hasCode:!!code,codeLength:code?.length,hasClientId:!!clientId,hasClientSecret:!!clientSecret,redirectUri,redirectUriLength:redirectUri?.length,userId,hasRedirectOrigin:!!redirectOrigin},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C,D'})}).catch(()=>{});
-      // #endregion
-      
       // Exchange code for tokens
+      console.log('=== Token Exchange Debug ===');
+      console.log('Exchanging code for tokens...');
+      console.log('Using client_id:', clientId.substring(0, 30) + '...');
+      console.log('Using redirect_uri:', redirectUri);
+
       const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -184,16 +177,18 @@ Deno.serve(async (req) => {
         }),
       });
 
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/5a1857ea-8661-4f82-a825-26d587272163',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-sheets-oauth/index.ts:150',message:'Token exchange - AFTER request',data:{status:tokenResponse.status,statusText:tokenResponse.statusText,ok:tokenResponse.ok,headers:Object.fromEntries(tokenResponse.headers.entries())},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-      // #endregion
+      console.log('Token response status:', tokenResponse.status);
 
       if (!tokenResponse.ok) {
-        const error = await tokenResponse.text();
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/5a1857ea-8661-4f82-a825-26d587272163',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-sheets-oauth/index.ts:152',message:'Token exchange - ERROR response',data:{status:tokenResponse.status,errorText:error,errorLength:error?.length,redirectUri,hasClientId:!!clientId,hasClientSecret:!!clientSecret},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C,D,E,F'})}).catch(()=>{});
-        // #endregion
-        console.error('Token exchange failed:', error);
+        const errorText = await tokenResponse.text();
+        console.error('=== TOKEN EXCHANGE FAILED ===');
+        console.error('Status:', tokenResponse.status);
+        console.error('Response:', errorText);
+        console.error('Check these common issues:');
+        console.error('1. Client ID and Secret match in Google Cloud Console');
+        console.error('2. Redirect URI is exactly:', redirectUri);
+        console.error('3. OAuth consent screen is configured');
+        
         const frontendUrl = Deno.env.get('FRONTEND_URL') || redirectOrigin || 'https://funnel-pulse-sheets.lovable.app';
         return new Response(null, {
           status: 302,
@@ -204,6 +199,10 @@ Deno.serve(async (req) => {
       }
 
       const tokens = await tokenResponse.json();
+      console.log('Token exchange successful!');
+      console.log('Has access_token:', !!tokens.access_token);
+      console.log('Has refresh_token:', !!tokens.refresh_token);
+      console.log('Expires in:', tokens.expires_in, 'seconds');
 
       // Calculate expiration time
       const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
