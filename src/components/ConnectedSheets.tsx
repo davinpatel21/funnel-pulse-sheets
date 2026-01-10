@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -5,14 +6,26 @@ import { useSheetConfigurations } from "@/hooks/useSheetConfigurations";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Radio, Trash2, ExternalLink, RefreshCw, FileSpreadsheet } from "lucide-react";
+import { Loader2, Radio, Trash2, ExternalLink, RefreshCw, FileSpreadsheet, AlertTriangle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { LiveDataDebugger } from "./LiveDataDebugger";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export function ConnectedSheets() {
   const { data: configs, isLoading } = useSheetConfigurations();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [disconnectAllOpen, setDisconnectAllOpen] = useState(false);
   
   // Group configurations by sheet URL to show workbook organization
   const groupByWorkbook = (configs: any[]) => {
@@ -70,6 +83,36 @@ export function ConnectedSheets() {
     },
   });
 
+  const disconnectAllMutation = useMutation({
+    mutationFn: async () => {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+
+      const { error } = await supabase
+        .from('sheet_configurations')
+        .delete()
+        .eq('user_id', user.id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sheet-configurations'] });
+      setDisconnectAllOpen(false);
+      toast({ 
+        title: "All sheets disconnected", 
+        description: "You can now connect a new workbook"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to disconnect sheets",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   if (isLoading) {
     return (
       <Card>
@@ -95,16 +138,68 @@ export function ConnectedSheets() {
               Manage your live Google Sheets connections. Data syncs automatically every 5 minutes.
             </CardDescription>
           </div>
-          <Button 
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
-            variant="outline"
-            size="sm"
-            className="gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
-            {syncMutation.isPending ? 'Syncing...' : 'Sync All'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button 
+              onClick={() => syncMutation.mutate()}
+              disabled={syncMutation.isPending}
+              variant="outline"
+              size="sm"
+              className="gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+              {syncMutation.isPending ? 'Syncing...' : 'Sync All'}
+            </Button>
+            
+            {/* Disconnect All Button */}
+            <AlertDialog open={disconnectAllOpen} onOpenChange={setDisconnectAllOpen}>
+              <AlertDialogTrigger asChild>
+                <Button 
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Disconnect All
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-destructive" />
+                    Disconnect All Sheets?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className="space-y-2">
+                    <p>
+                      This will disconnect all {configs?.length || 0} connected sheet{(configs?.length || 0) !== 1 ? 's' : ''} from your account.
+                    </p>
+                    <p className="font-medium text-foreground">
+                      Your data in Google Sheets will NOT be deleted, only the connection to this dashboard.
+                    </p>
+                    <p>
+                      After disconnecting, you can connect a new workbook with fresh field mappings.
+                    </p>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => disconnectAllMutation.mutate()}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    disabled={disconnectAllMutation.isPending}
+                  >
+                    {disconnectAllMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Disconnecting...
+                      </>
+                    ) : (
+                      'Disconnect All Sheets'
+                    )}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">

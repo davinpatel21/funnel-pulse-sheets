@@ -5,7 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { RefreshCw, FileSpreadsheet, CheckCircle2, Sparkles, ShieldCheck, ArrowLeft, FolderOpen } from "lucide-react";
 import { GoogleSheetsOAuth } from "@/components/GoogleSheetsOAuth";
-import { GoogleSheetsFilePicker } from "@/components/GoogleSheetsFilePicker";
+import { GoogleSheetsFilePicker, type SheetTab } from "@/components/GoogleSheetsFilePicker";
 import { GoogleSheetsImport } from "@/components/GoogleSheetsImport";
 import { ConnectedSheets } from "@/components/ConnectedSheets";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
@@ -16,11 +16,10 @@ import { supabase } from "@/integrations/supabase/client";
 
 type ImportMode = 'none' | 'picker' | 'analyze';
 
-interface SelectedSheet {
+interface SelectedWorkbook {
   spreadsheetId: string;
   spreadsheetName: string;
-  sheetId: number;
-  sheetTitle: string;
+  selectedTabs: SheetTab[];
 }
 
 export default function Settings() {
@@ -29,7 +28,7 @@ export default function Settings() {
   const { status, hasCredentials, hasSheetConfigs } = useSyncStatus();
   const { isAdmin, isLoading: isAdminLoading } = useIsAdmin();
   const [importMode, setImportMode] = useState<ImportMode>('none');
-  const [selectedSheet, setSelectedSheet] = useState<SelectedSheet | null>(null);
+  const [selectedWorkbook, setSelectedWorkbook] = useState<SelectedWorkbook | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
 
   // Get user ID for sheet configuration
@@ -115,18 +114,18 @@ export default function Settings() {
     },
   });
 
-  const handleSheetSelect = (spreadsheetId: string, spreadsheetName: string, sheetId: number, sheetTitle: string) => {
-    setSelectedSheet({ spreadsheetId, spreadsheetName, sheetId, sheetTitle });
+  const handleWorkbookSelect = (spreadsheetId: string, spreadsheetName: string, selectedTabs: SheetTab[]) => {
+    setSelectedWorkbook({ spreadsheetId, spreadsheetName, selectedTabs });
     setImportMode('analyze');
   };
 
   const handleBackToPicker = () => {
-    setSelectedSheet(null);
+    setSelectedWorkbook(null);
     setImportMode('picker');
   };
 
   const handleBackToOptions = () => {
-    setSelectedSheet(null);
+    setSelectedWorkbook(null);
     setImportMode('none');
   };
 
@@ -229,10 +228,10 @@ export default function Settings() {
                       </div>
                     </div>
                     <CardTitle className="text-2xl">
-                      {hasSheetConfigs ? 'Connect Another Spreadsheet' : 'Connect a Spreadsheet'}
+                      {hasSheetConfigs ? 'Connect Another Workbook' : 'Connect a Workbook'}
                     </CardTitle>
                     <CardDescription className="text-base">
-                      Browse your Google Drive and select a spreadsheet. Our AI will automatically detect and map your columns.
+                      Browse your Google Drive and select a spreadsheet. Our AI will auto-detect tabs and map columns for Team, Leads, Appointments, Calls, and Deals.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="flex justify-center pt-4">
@@ -286,11 +285,11 @@ export default function Settings() {
                   <ArrowLeft className="h-4 w-4" />
                   Back to options
                 </Button>
-                <GoogleSheetsFilePicker onSelect={handleSheetSelect} />
+                <GoogleSheetsFilePicker onSelect={handleWorkbookSelect} />
               </div>
             )}
 
-            {importMode === 'analyze' && selectedSheet && (
+            {importMode === 'analyze' && selectedWorkbook && (
               <div className="space-y-4">
                 <Button 
                   variant="ghost" 
@@ -301,10 +300,9 @@ export default function Settings() {
                   Back to file picker
                 </Button>
                 <GoogleSheetsImport 
-                  spreadsheetId={selectedSheet.spreadsheetId}
-                  spreadsheetName={selectedSheet.spreadsheetName}
-                  sheetId={selectedSheet.sheetId}
-                  sheetTitle={selectedSheet.sheetTitle}
+                  spreadsheetId={selectedWorkbook.spreadsheetId}
+                  spreadsheetName={selectedWorkbook.spreadsheetName}
+                  selectedTabs={selectedWorkbook.selectedTabs}
                 />
               </div>
             )}
