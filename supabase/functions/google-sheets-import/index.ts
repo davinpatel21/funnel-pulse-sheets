@@ -72,13 +72,177 @@ function extractGid(sheetUrl: string): string | null {
   return match ? match[1] : null;
 }
 
+// Refresh Google OAuth access token
+async function refreshAccessToken(
+  supabase: any, 
+  userId: string, 
+  credentials: any
+): Promise<string> {
+  const clientId = Deno.env.get('GOOGLE_SHEETS_CLIENT_ID');
+  const clientSecret = Deno.env.get('GOOGLE_SHEETS_CLIENT_SECRET');
+  
+  if (!clientId || !clientSecret) {
+    throw new Error('Google OAuth not configured. Please contact support.');
+  }
+
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: credentials.refresh_token,
+      grant_type: 'refresh_token',
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Token refresh failed:', errorText);
+    throw new Error('Failed to refresh Google credentials. Please reconnect your Google account in Settings.');
+  }
+
+  const tokens = await response.json();
+  
+  // Update stored token
+  const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+  await supabase
+    .from('google_sheets_credentials')
+    .update({
+      access_token: tokens.access_token,
+      expires_at: expiresAt,
+    })
+    .eq('user_id', userId);
+
+  console.log('Token refreshed successfully');
+  return tokens.access_token;
+}
+
+// Get valid access token (refresh if needed)
+async function getValidAccessToken(supabase: any, userId: string): Promise<string> {
+  const { data: credentials, error } = await supabase
+    .from('google_sheets_credentials')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
+
+  if (error || !credentials) {
+    throw new Error('Google account not connected. Please connect your Google account in Settings.');
+  }
+
+  // Check if token is expired (with 1 min buffer)
+  const expiresAt = new Date(credentials.expires_at);
+  const now = new Date(Date.now() + 60000); // 1 min buffer
+
+  if (expiresAt <= now) {
+    console.log('Access token expired, refreshing...');
+    return await refreshAccessToken(supabase, userId, credentials);
+  }
+
+  return credentials.access_token;
+}
+
+// Convert sheet name/gid to A1 range for API call
+async function getSheetRange(accessToken: string, spreadsheetId: string, gid?: string): Promise<string> {
+  // Get spreadsheet metadata to find sheet name from gid
+  const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties(sheetId,title))`;
+  
+  const response = await fetch(metaUrl, {
+    headers: { 'Authorization': `Bearer ${accessToken}` }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Failed to get sheet metadata:', errorText);
+    throw new Error('Failed to access Google Sheet. Please check your permissions.');
+  }
+
+  const metadata = await response.json();
+  const sheets = metadata.sheets || [];
+
+  if (gid) {
+    const sheet = sheets.find((s: any) => String(s.properties.sheetId) === gid);
+    if (sheet) {
+      return `'${sheet.properties.title}'`;
+    }
+  }
+
+  // Default to first sheet
+  if (sheets.length > 0) {
+    return `'${sheets[0].properties.title}'`;
+  }
+
+  return 'Sheet1';
+}
+
+// Fetch sheet data using OAuth (works for private sheets)
+async function fetchSheetDataWithAuth(
+  supabase: any, 
+  userId: string, 
+  spreadsheetId: string, 
+  gid?: string,
+  maxRows?: number
+): Promise<any[]> {
+  const accessToken = await getValidAccessToken(supabase, userId);
+  
+  // Get the sheet name from gid
+  const sheetRange = await getSheetRange(accessToken, spreadsheetId, gid);
+  
+  // Fetch data using Google Sheets API
+  const sheetsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetRange)}`;
+  
+  console.log(`Fetching sheet data from: ${sheetsUrl}`);
+  
+  const response = await fetch(sheetsUrl, {
+    headers: { 'Authorization': `Bearer ${accessToken}` }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Failed to fetch sheet data:', errorText);
+    
+    if (response.status === 403) {
+      throw new Error('Access denied to Google Sheet. Please ensure the sheet is shared with your Google account.');
+    }
+    if (response.status === 404) {
+      throw new Error('Google Sheet not found. It may have been deleted or moved.');
+    }
+    
+    throw new Error('Failed to fetch sheet data from Google.');
+  }
+
+  const data = await response.json();
+  const values = data.values || [];
+  
+  if (values.length === 0) {
+    throw new Error('Sheet is empty');
+  }
+
+  // Convert to array of objects (first row as headers)
+  const headers = values[0];
+  const rows = [];
+
+  const endIndex = maxRows ? Math.min(maxRows + 1, values.length) : values.length;
+  
+  for (let i = 1; i < endIndex; i++) {
+    const row: any = {};
+    headers.forEach((header: string, index: number) => {
+      row[header.trim()] = values[i]?.[index] || '';
+    });
+    rows.push(row);
+  }
+
+  console.log(`Fetched ${rows.length} rows via Sheets API`);
+  return rows;
+}
+
+// Legacy public CSV fetch (fallback for public sheets)
 async function fetchSheetData(sheetUrl: string, maxRows?: number): Promise<any[]> {
   const sheetId = extractSheetId(sheetUrl);
   if (!sheetId) {
     throw new Error('Invalid Google Sheets URL');
   }
 
-  // Use CSV export endpoint (works for public sheets)
   const gid = extractGid(sheetUrl);
   let csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
   if (gid) {
@@ -155,10 +319,23 @@ async function analyzeSheet(req: Request, supabase: any, userId: string) {
 
   console.log('Analyzing sheet:', sheetUrl);
 
-  // Fetch first 5 rows for analysis
-  const rows = await fetchSheetData(sheetUrl, 6); // 1 header + 5 data rows
+  // Extract spreadsheet ID and gid from URL
+  const spreadsheetId = extractSheetId(sheetUrl);
+  const gid = extractGid(sheetUrl);
+  
+  if (!spreadsheetId) {
+    throw new Error('Invalid Google Sheets URL');
+  }
+
+  // Fetch first 5 rows for analysis using OAuth
+  const rows = await fetchSheetDataWithAuth(supabase, userId, spreadsheetId, gid || undefined, 5);
+  
+  if (rows.length === 0) {
+    throw new Error('Sheet is empty');
+  }
+  
   const headers = Object.keys(rows[0]);
-  const sampleRows = rows.slice(1, 4); // First 3 data rows
+  const sampleRows = rows.slice(0, 3); // First 3 data rows
 
   console.log('Headers:', headers);
   console.log('Sample rows:', sampleRows);
@@ -357,11 +534,18 @@ async function executeImport(req: Request, supabase: any, userId: string) {
     return await executeTeamImport(req, supabase, userId, sheetUrl, mappings, defaults);
   }
 
-  // Fetch all rows
-  const rows = await fetchSheetData(sheetUrl);
-  const dataRows = rows.slice(1); // Skip header
+  // Extract spreadsheet info and fetch using OAuth
+  const spreadsheetId = extractSheetId(sheetUrl);
+  const gid = extractGid(sheetUrl);
+  
+  if (!spreadsheetId) {
+    throw new Error('Invalid Google Sheets URL');
+  }
 
-  console.log(`Processing ${dataRows.length} rows`);
+  // Fetch all rows using OAuth
+  const rows = await fetchSheetDataWithAuth(supabase, userId, spreadsheetId, gid || undefined);
+
+  console.log(`Processing ${rows.length} rows`);
 
   const results = {
     imported: 0,
@@ -371,8 +555,8 @@ async function executeImport(req: Request, supabase: any, userId: string) {
 
   const leadsToInsert = [];
 
-  for (let i = 0; i < dataRows.length; i++) {
-    const row = dataRows[i];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     
     try {
       const lead: any = {};
@@ -494,10 +678,17 @@ async function executeImport(req: Request, supabase: any, userId: string) {
 async function executeTeamImport(req: Request, supabase: any, userId: string, sheetUrl: string, mappings: any[], defaults: any) {
   console.log('Executing team/profiles import for:', sheetUrl);
 
-  const rows = await fetchSheetData(sheetUrl);
-  const dataRows = rows.slice(1);
+  // Extract spreadsheet info and fetch using OAuth
+  const spreadsheetId = extractSheetId(sheetUrl);
+  const gid = extractGid(sheetUrl);
+  
+  if (!spreadsheetId) {
+    throw new Error('Invalid Google Sheets URL');
+  }
 
-  console.log(`Processing ${dataRows.length} team rows`);
+  const rows = await fetchSheetDataWithAuth(supabase, userId, spreadsheetId, gid || undefined);
+
+  console.log(`Processing ${rows.length} team rows`);
 
   const results = {
     imported: 0,
@@ -507,8 +698,8 @@ async function executeTeamImport(req: Request, supabase: any, userId: string, sh
 
   const profilesToProcess = [];
 
-  for (let i = 0; i < dataRows.length; i++) {
-    const row = dataRows[i];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     
     try {
       const profile: any = {};

@@ -37,6 +37,141 @@ function errorResponse(
   );
 }
 
+// Refresh Google OAuth access token
+async function refreshAccessToken(
+  supabase: any, 
+  userId: string, 
+  credentials: any
+): Promise<string> {
+  const clientId = Deno.env.get('GOOGLE_SHEETS_CLIENT_ID');
+  const clientSecret = Deno.env.get('GOOGLE_SHEETS_CLIENT_SECRET');
+  
+  if (!clientId || !clientSecret) {
+    throw new Error('Google OAuth not configured');
+  }
+
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: credentials.refresh_token,
+      grant_type: 'refresh_token',
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to refresh Google credentials');
+  }
+
+  const tokens = await response.json();
+  
+  const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+  await supabase
+    .from('google_sheets_credentials')
+    .update({
+      access_token: tokens.access_token,
+      expires_at: expiresAt,
+    })
+    .eq('user_id', userId);
+
+  return tokens.access_token;
+}
+
+// Get valid access token (refresh if needed)
+async function getValidAccessToken(supabase: any, userId: string): Promise<string | null> {
+  const { data: credentials, error } = await supabase
+    .from('google_sheets_credentials')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
+
+  if (error || !credentials) {
+    return null;
+  }
+
+  const expiresAt = new Date(credentials.expires_at);
+  const now = new Date(Date.now() + 60000);
+
+  if (expiresAt <= now) {
+    try {
+      return await refreshAccessToken(supabase, userId, credentials);
+    } catch {
+      return null;
+    }
+  }
+
+  return credentials.access_token;
+}
+
+// Fetch sheet data using OAuth (for private sheets)
+async function fetchSheetDataWithOAuth(
+  accessToken: string,
+  spreadsheetId: string,
+  gid?: string
+): Promise<any[] | null> {
+  try {
+    // Get sheet name from gid
+    const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties(sheetId,title))`;
+    const metaResponse = await fetch(metaUrl, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+
+    if (!metaResponse.ok) {
+      console.log('OAuth metadata fetch failed:', metaResponse.status);
+      return null;
+    }
+
+    const metadata = await metaResponse.json();
+    const sheets = metadata.sheets || [];
+
+    let sheetName = 'Sheet1';
+    if (gid) {
+      const sheet = sheets.find((s: any) => String(s.properties.sheetId) === gid);
+      if (sheet) {
+        sheetName = sheet.properties.title;
+      }
+    } else if (sheets.length > 0) {
+      sheetName = sheets[0].properties.title;
+    }
+
+    // Fetch data
+    const sheetsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`'${sheetName}'`)}`;
+    const response = await fetch(sheetsUrl, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+
+    if (!response.ok) {
+      console.log('OAuth data fetch failed:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    const values = data.values || [];
+    
+    if (values.length === 0) return [];
+
+    // Convert to objects
+    const headers = values[0];
+    const rows = [];
+    
+    for (let i = 1; i < values.length; i++) {
+      const row: any = {};
+      headers.forEach((header: string, index: number) => {
+        row[header.trim()] = values[i]?.[index] || '';
+      });
+      rows.push(row);
+    }
+
+    console.log(`Fetched ${rows.length} rows via OAuth API`);
+    return rows;
+  } catch (error) {
+    console.error('OAuth fetch error:', error);
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -117,48 +252,58 @@ serve(async (req) => {
       );
     }
 
-    // Fetch data from Google Sheets (CSV export)
     const gid = extractGid(config.sheet_url);
-    let csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
-    if (gid) {
-      csvUrl += `&gid=${gid}`;
-      console.log(`Fetching specific tab with gid=${gid}`);
-    }
-    
-    const csvResponse = await fetch(csvUrl);
-    if (!csvResponse.ok) {
-      // Check for common Google Sheets access errors
-      if (csvResponse.status === 404) {
-        return errorResponse(
-          'The Google Sheet could not be found. It may have been deleted or moved',
-          'SHEET_ACCESS_DENIED',
-          502
-        );
-      }
-      return errorResponse(
-        'Unable to access the Google Sheet. Make sure it\'s set to "Anyone with the link can view"',
-        'SHEET_ACCESS_DENIED',
-        502,
-        `Google returned status ${csvResponse.status}`
-      );
+    let rows: any[] | null = null;
+
+    // Try OAuth first (works for private sheets)
+    const accessToken = await getValidAccessToken(supabase, user.id);
+    if (accessToken) {
+      console.log('Attempting OAuth fetch for private sheet...');
+      rows = await fetchSheetDataWithOAuth(accessToken, sheetId, gid || undefined);
     }
 
-    const csvText = await csvResponse.text();
-    
-    // Check if we got an HTML error page instead of CSV
-    if (csvText.includes('<!DOCTYPE html>') || csvText.includes('<html')) {
-      return errorResponse(
-        'Unable to access the Google Sheet. Make sure it\'s set to "Anyone with the link can view"',
-        'SHEET_ACCESS_DENIED',
-        502,
-        'Received HTML instead of CSV data'
-      );
+    // Fallback to public CSV export if OAuth fails or no credentials
+    if (!rows) {
+      console.log('Falling back to public CSV export...');
+      let csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+      if (gid) {
+        csvUrl += `&gid=${gid}`;
+        console.log(`Fetching specific tab with gid=${gid}`);
+      }
+      
+      const csvResponse = await fetch(csvUrl);
+      if (!csvResponse.ok) {
+        if (csvResponse.status === 404) {
+          return errorResponse(
+            'The Google Sheet could not be found. It may have been deleted or moved',
+            'SHEET_ACCESS_DENIED',
+            502
+          );
+        }
+        return errorResponse(
+          'Unable to access the Google Sheet. Make sure it\'s set to "Anyone with the link can view" or connect your Google account in Settings',
+          'SHEET_ACCESS_DENIED',
+          502,
+          `Google returned status ${csvResponse.status}`
+        );
+      }
+
+      const csvText = await csvResponse.text();
+      
+      if (csvText.includes('<!DOCTYPE html>') || csvText.includes('<html')) {
+        return errorResponse(
+          'Unable to access the Google Sheet. Make sure it\'s set to "Anyone with the link can view" or connect your Google account in Settings',
+          'SHEET_ACCESS_DENIED',
+          502,
+          'Received HTML instead of CSV data'
+        );
+      }
+      
+      console.log(`Fetched CSV from sheet ${sheetId}, length: ${csvText.length} chars`);
+      rows = parseCsv(csvText);
     }
     
-    console.log(`Fetched CSV from sheet ${sheetId}, length: ${csvText.length} chars`);
-    
-    const rows = parseCsv(csvText);
-    console.log(`Parsed ${rows.length} rows from CSV`);
+    console.log(`Parsed ${rows.length} rows`);
 
     // Transform data based on sheet type using canonical schema
     const transformedData = rows.map((row, index) => {
