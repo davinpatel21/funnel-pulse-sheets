@@ -54,106 +54,175 @@ async function enhanceFunctionsHttpError(error: any, response: Response): Promis
  * Ensures auth-related errors are user-friendly.
  * Includes detailed debug logging when enabled.
  */
+/**
+ * Validates the current session by calling getUser()
+ */
+async function validateSession(): Promise<boolean> {
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    return !!user && !error;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Attempts to refresh the session using the refresh token
+ */
+async function tryRefreshSession(): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.auth.refreshSession();
+    return !!data.session && !error;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Gets a valid session, with retry and refresh logic
+ */
+async function getValidSession(maxRetries = 3, retryDelayMs = 500): Promise<{ session: any; error: Error | null }> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (session) {
+      // Validate the session is actually usable
+      const isValid = await validateSession();
+      if (isValid) {
+        return { session, error: null };
+      }
+      
+      // Session exists but invalid - try refresh
+      console.log(`[authHelpers] Session invalid on attempt ${attempt + 1}, attempting refresh...`);
+      const refreshed = await tryRefreshSession();
+      if (refreshed) {
+        const { data: { session: newSession } } = await supabase.auth.getSession();
+        if (newSession) {
+          return { session: newSession, error: null };
+        }
+      }
+    }
+    
+    // Wait before retry (except on last attempt)
+    if (attempt < maxRetries - 1) {
+      await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+    }
+  }
+  
+  return { session: null, error: new Error("Unable to establish valid auth session") };
+}
+
+/**
+ * Invokes a backend function with guaranteed Authorization header.
+ * Includes session validation, automatic token refresh, and retry on 401.
+ */
 export async function invokeWithAuth<T = any>(
   functionName: string,
   options?: { body?: any; headers?: Record<string, string> }
 ): Promise<{ data: T | null; error: Error | null }> {
   const timer = createTimedOperation("invokeWithAuth", functionName);
 
-  // Try to get session with retry for auth hydration
-  let session = null;
-  let attempts = 0;
-  const maxAttempts = 3;
+  // Get valid session with retries and validation
+  const { session, error: sessionError } = await getValidSession();
 
-  while (!session?.access_token && attempts < maxAttempts) {
-    const { data } = await supabase.auth.getSession();
-    session = data.session;
-
-    if (!session?.access_token && attempts < maxAttempts - 1) {
-      // Wait briefly for auth to hydrate
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-    attempts++;
-  }
-
-  if (!session?.access_token) {
-    const err = new Error("Please sign in to continue");
-    timer.error("No session after retries", err);
+  if (sessionError || !session?.access_token) {
+    const err: any = new Error("Please sign in to continue");
+    err.backendCode = "SESSION_UNAVAILABLE";
+    timer.error("No valid session after retries", err);
     return { data: null, error: err };
   }
 
-  try {
-    const { data, error, response } = await supabase.functions.invoke<T>(functionName, {
+  // Make the function call
+  const makeCall = async (accessToken: string) => {
+    return await supabase.functions.invoke<T>(functionName, {
       ...options,
       headers: {
         ...options?.headers,
-        Authorization: `Bearer ${session.access_token}`,
+        Authorization: `Bearer ${accessToken}`,
       },
     });
+  };
 
-    if (error) {
-      let effectiveError: any = error;
+  let result = await makeCall(session.access_token);
 
-      // Supabase returns FunctionsHttpError with `context` = Response (body not read).
-      // Extract structured JSON from our backend functions (requestId, code, etc.).
-      const isHttpError =
-        error instanceof FunctionsHttpError ||
-        (typeof (error as any)?.name === "string" && (error as any).name === "FunctionsHttpError");
-
-      if (isHttpError && response) {
-        const enhanced = await enhanceFunctionsHttpError(error, response as Response);
-        if (enhanced) effectiveError = enhanced;
+  // Handle 401 with one retry after refresh
+  if (result.error) {
+    const status = (result.error as any)?.context?.status || 
+                   (result.response as any)?.status;
+    
+    if (status === 401) {
+      console.log(`[invokeWithAuth] Got 401, attempting token refresh...`);
+      
+      const refreshed = await tryRefreshSession();
+      if (refreshed) {
+        const { data: { session: newSession } } = await supabase.auth.getSession();
+        if (newSession) {
+          console.log(`[invokeWithAuth] Token refreshed, retrying call...`);
+          result = await makeCall(newSession.access_token);
+        }
       }
+    }
+  }
 
-      // Log detailed error info
-      debugError("invokeWithAuth", `${functionName} failed`, effectiveError, {
-        requestId: timer.requestId,
-        functionName,
-        httpStatus: (effectiveError as any)?.context?.status ?? (response as any)?.status,
-        bodyKeys: options?.body ? Object.keys(options.body) : [],
-      });
+  // Handle final error
+  if (result.error) {
+    let effectiveError: any = result.error;
 
-      // Transform auth errors to user-friendly messages
-      const errorMessage = effectiveError?.message || "";
-      const status = (effectiveError as any)?.context?.status;
+    // Supabase returns FunctionsHttpError with `context` = Response (body not read).
+    const isHttpError =
+      result.error instanceof FunctionsHttpError ||
+      (typeof (result.error as any)?.name === "string" && (result.error as any).name === "FunctionsHttpError");
 
-      if (
-        status === 401 ||
-        errorMessage.includes("authorization") ||
-        errorMessage.includes("AUTH_REQUIRED") ||
-        errorMessage.includes("SESSION_EXPIRED") ||
-        errorMessage.includes("401")
-      ) {
-        return {
-          data: null,
-          error: new Error("Please sign in to access your data"),
-        };
-      }
-
-      // Enhance error with backend details (requestId, code)
-      const backendDetails = extractBackendErrorDetails(effectiveError);
-      if (backendDetails?.requestId) {
-        const enhancedError: any = new Error(formatErrorForDisplay(effectiveError));
-        enhancedError.requestId = backendDetails.requestId;
-        enhancedError.backendCode = backendDetails.code;
-        return { data: null, error: enhancedError };
-      }
-
-      return { data: null, error: effectiveError };
+    if (isHttpError && result.response) {
+      const enhanced = await enhanceFunctionsHttpError(result.error, result.response as Response);
+      if (enhanced) effectiveError = enhanced;
     }
 
-    timer.success("OK", {
-      hasData: !!data,
-      dataType: data ? typeof data : "null",
+    // Log detailed error info
+    debugError("invokeWithAuth", `${functionName} failed`, effectiveError, {
+      requestId: timer.requestId,
+      functionName,
+      httpStatus: (effectiveError as any)?.context?.status ?? (result.response as any)?.status,
+      bodyKeys: options?.body ? Object.keys(options.body) : [],
     });
 
-    return { data, error: null };
-  } catch (unexpectedError: any) {
-    debugError("invokeWithAuth", `${functionName} threw exception`, unexpectedError, {
-      requestId: timer.requestId,
-    });
-    return { data: null, error: unexpectedError };
+    // Transform auth errors to user-friendly messages but preserve metadata
+    const errorMessage = effectiveError?.message || "";
+    const httpStatus = (effectiveError as any)?.context?.status;
+
+    if (
+      httpStatus === 401 ||
+      errorMessage.includes("authorization") ||
+      errorMessage.includes("AUTH_REQUIRED") ||
+      errorMessage.includes("SESSION_EXPIRED") ||
+      errorMessage.includes("401")
+    ) {
+      const authErr: any = new Error("Please sign in to access your data");
+      authErr.requestId = (effectiveError as any)?.requestId;
+      authErr.backendCode = (effectiveError as any)?.backendCode || "AUTH_REQUIRED";
+      authErr.backendDetails = (effectiveError as any)?.backendDetails;
+      authErr.httpStatus = httpStatus;
+      return { data: null, error: authErr };
+    }
+
+    // Enhance error with backend details (requestId, code)
+    const backendDetails = extractBackendErrorDetails(effectiveError);
+    if (backendDetails?.requestId) {
+      const enhancedError: any = new Error(formatErrorForDisplay(effectiveError));
+      enhancedError.requestId = backendDetails.requestId;
+      enhancedError.backendCode = backendDetails.code;
+      return { data: null, error: enhancedError };
+    }
+
+    return { data: null, error: effectiveError };
   }
+
+  timer.success("OK", {
+    hasData: !!result.data,
+    dataType: result.data ? typeof result.data : "null",
+  });
+
+  return { data: result.data, error: null };
 }
 
 /**

@@ -1,76 +1,63 @@
 import { useState, useEffect } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileSpreadsheet, Loader2, CheckCircle2, AlertCircle, Radio, Sparkles } from "lucide-react";
-import { invokeWithAuth } from "@/lib/authHelpers";
-import { debugLog, debugError, createTimedOperation, formatErrorForDisplay } from "@/lib/debugLogger";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  SelectGroup,
-  SelectLabel,
-  SelectSeparator,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import type { SheetTab } from "./GoogleSheetsFilePicker";
+import { Loader2, CheckCircle2, AlertCircle, FileSpreadsheet, Sparkles, LogIn } from "lucide-react";
+import { invokeWithAuth } from "@/lib/authHelpers";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
+import { debugLog, debugError, createTimedOperation, formatErrorForDisplay } from "@/lib/debugLogger";
+import { useNavigate } from "react-router-dom";
+
+interface SheetTab {
+  sheetId: number;
+  title: string;
+  rowCount: number;
+}
 
 interface Mapping {
   sheetColumn: string;
-  dbField: string | null;
-  confidence: number | string;
-  transformation?: string;
-  notes?: string;
-  sampleValue?: string;
+  dbField: string;
+  confidence: number;
   customFieldKey?: string;
-}
-
-interface AnalysisResult {
-  sheetId: string;
-  headers: string[];
-  totalRows: number;
-  sheet_type: string;
-  analysis: {
-    mappings: Mapping[];
-    warnings: string[];
-    suggestedDefaults: Record<string, string>;
-  };
-  sampleRows: any[];
-  tabTitle?: string;
 }
 
 interface TabAnalysis {
   tab: SheetTab;
-  analysis: AnalysisResult | null;
+  analysis: any;
   mappings: Mapping[];
   error?: string;
   debugInfo?: { requestId?: string; rawError?: string };
 }
 
 interface GoogleSheetsImportProps {
-  spreadsheetId?: string;
-  spreadsheetName?: string;
+  spreadsheetId: string;
+  spreadsheetName: string;
   selectedTabs?: SheetTab[];
-  // Legacy single-tab props
   sheetId?: number;
   sheetTitle?: string;
 }
+
+const DB_FIELD_OPTIONS = [
+  { value: 'name', label: 'Name' },
+  { value: 'email', label: 'Email' },
+  { value: 'phone', label: 'Phone' },
+  { value: 'source', label: 'Lead Source' },
+  { value: 'status', label: 'Status' },
+  { value: 'notes', label: 'Notes' },
+  { value: 'utm_source', label: 'UTM Source' },
+  { value: 'setter_id', label: 'Setter' },
+  { value: 'closer_id', label: 'Closer' },
+  { value: 'scheduled_at', label: 'Scheduled At' },
+  { value: 'booked_at', label: 'Booked At' },
+  { value: 'full_name', label: 'Full Name (Team)' },
+  { value: 'role', label: 'Role (Team)' },
+  { value: 'custom', label: '→ Custom Field' },
+  { value: 'skip', label: '✕ Skip this column' },
+];
 
 export function GoogleSheetsImport({ 
   spreadsheetId, 
@@ -78,9 +65,10 @@ export function GoogleSheetsImport({
   selectedTabs,
   sheetId,
   sheetTitle 
-}: GoogleSheetsImportProps = {}) {
+}: GoogleSheetsImportProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const navigate = useNavigate();
   
   // Convert legacy single-tab to array format
   const tabs: SheetTab[] = selectedTabs || (sheetId !== undefined && sheetTitle ? [{ sheetId, title: sheetTitle, rowCount: 0 }] : []);
@@ -89,23 +77,58 @@ export function GoogleSheetsImport({
   const [currentAnalyzingIndex, setCurrentAnalyzingIndex] = useState<number>(-1);
   const [allAnalyzed, setAllAnalyzed] = useState(false);
   const [connectingAll, setConnectingAll] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [connectionComplete, setConnectionComplete] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  // Check authentication status
+  // Check authentication status using getUser() for validation
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsLoggedIn(!!session);
-      setUserId(session?.user?.id || null);
+    let mounted = true;
+
+    const checkAuth = async () => {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (mounted) {
+        if (error || !user) {
+          setIsLoggedIn(false);
+          setUserId(null);
+          setAuthError("Your session has expired. Please sign in again.");
+        } else {
+          setIsLoggedIn(true);
+          setUserId(user.id);
+          setAuthError(null);
+        }
+      }
+    };
+
+    checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (mounted) {
+        if (session?.user) {
+          // Validate with getUser
+          const { data: { user }, error } = await supabase.auth.getUser();
+          if (user && !error) {
+            setIsLoggedIn(true);
+            setUserId(user.id);
+            setAuthError(null);
+          } else {
+            setIsLoggedIn(false);
+            setUserId(null);
+            setAuthError("Your session has expired. Please sign in again.");
+          }
+        } else {
+          setIsLoggedIn(false);
+          setUserId(null);
+          setAuthError("Your session has expired. Please sign in again.");
+        }
+      }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      setIsLoggedIn(!!session);
-      setUserId(session?.user?.id || null);
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Initialize tab analyses when tabs change
@@ -117,14 +140,14 @@ export function GoogleSheetsImport({
         mappings: [],
       })));
     }
-  }, [tabs]);
+  }, [tabs, tabAnalyses.length]);
 
-  // Auto-start analysis when tabs are initialized
+  // Auto-start analysis when tabs are initialized and user is authenticated
   useEffect(() => {
-    if (tabAnalyses.length > 0 && currentAnalyzingIndex === -1 && !allAnalyzed && isLoggedIn) {
+    if (tabAnalyses.length > 0 && currentAnalyzingIndex === -1 && !allAnalyzed && isLoggedIn === true) {
       analyzeNextTab(0);
     }
-  }, [tabAnalyses, currentAnalyzingIndex, allAnalyzed, isLoggedIn]);
+  }, [tabAnalyses.length, currentAnalyzingIndex, allAnalyzed, isLoggedIn]);
 
   const analyzeNextTab = async (index: number) => {
     if (index >= tabAnalyses.length) {
@@ -146,17 +169,38 @@ export function GoogleSheetsImport({
     });
 
     try {
-      // Use invokeWithAuth for consistent error handling and logging
       const { data, error } = await invokeWithAuth('google-sheets-import?action=analyze', {
         body: { sheetUrl },
       });
 
       if (error) {
+        const requestId = (error as any).requestId;
+        const backendCode = (error as any).backendCode;
+        
         debugError('GoogleSheetsImport', `Analysis failed for tab ${tab.title}`, error, {
           tabIndex: index,
           tabTitle: tab.title,
-          requestId: (error as any).requestId,
+          requestId,
         });
+
+        // Check if it's an auth error
+        if (backendCode === 'AUTH_REQUIRED' || error.message.includes('sign in')) {
+          setAuthError("Your session has expired. Please sign in again to continue.");
+          setTabAnalyses(prev => {
+            const updated = [...prev];
+            updated[index] = {
+              ...updated[index],
+              error: "Authentication required",
+              debugInfo: { requestId, rawError: error.message },
+            };
+            return updated;
+          });
+          // Stop analyzing further tabs on auth error
+          setAllAnalyzed(true);
+          setCurrentAnalyzingIndex(-1);
+          return;
+        }
+
         throw error;
       }
 
@@ -271,6 +315,21 @@ export function GoogleSheetsImport({
     }
   };
 
+  const handleSignIn = () => {
+    navigate('/auth');
+  };
+
+  const retryAnalysis = () => {
+    setAuthError(null);
+    setAllAnalyzed(false);
+    setCurrentAnalyzingIndex(-1);
+    setTabAnalyses(tabs.map(tab => ({
+      tab,
+      analysis: null,
+      mappings: [],
+    })));
+  };
+
   const getConfidenceBadge = (confidence: number | string) => {
     let numConfidence: number;
     
@@ -290,25 +349,53 @@ export function GoogleSheetsImport({
     }
   };
 
-  // Show login required message if not authenticated
-  if (!isLoggedIn) {
+  // Show loading while checking auth
+  if (isLoggedIn === null) {
     return (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <FileSpreadsheet className="h-5 w-5" />
-            Import from Google Sheets
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Checking authentication...
+          </CardTitle>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  // Show auth error with sign-in button
+  if (authError || isLoggedIn === false) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertCircle className="h-5 w-5 text-destructive" />
+            Authentication Required
           </CardTitle>
           <CardDescription>
-            Authentication required to import data.
+            {authError || "Please sign in to import data from Google Sheets."}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-4 flex items-start gap-3">
             <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
             <div>
-              <p className="text-sm font-medium text-yellow-900 dark:text-yellow-100">Please log in to use this feature</p>
+              <p className="text-sm font-medium text-yellow-900 dark:text-yellow-100">Session expired or invalid</p>
+              <p className="text-sm text-yellow-800 dark:text-yellow-200 mt-1">
+                Your authentication session is no longer valid. Please sign in again to continue.
+              </p>
             </div>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={handleSignIn} className="flex items-center gap-2">
+              <LogIn className="h-4 w-4" />
+              Sign In
+            </Button>
+            {authError && (
+              <Button variant="outline" onClick={retryAnalysis}>
+                Retry
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -437,7 +524,7 @@ export function GoogleSheetsImport({
         </div>
 
         {/* Individual tab mappings */}
-        {successfulAnalyses.map((ta, tabIndex) => {
+        {successfulAnalyses.map((ta) => {
           const actualTabIndex = tabAnalyses.findIndex(t => t.tab.sheetId === ta.tab.sheetId);
           
           return (
@@ -452,109 +539,93 @@ export function GoogleSheetsImport({
                   {ta.analysis?.totalRows} rows • {ta.mappings.length} fields
                 </span>
               </div>
-              
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Sheet Column</TableHead>
-                    <TableHead>Maps To</TableHead>
-                    <TableHead>Confidence</TableHead>
-                    <TableHead>Sample</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {ta.mappings.slice(0, 5).map((mapping, mappingIndex) => (
-                    <TableRow key={mappingIndex}>
-                      <TableCell className="font-medium">{mapping.sheetColumn}</TableCell>
-                      <TableCell>
-                        <Select
-                          value={mapping.dbField || "ignore"}
-                          onValueChange={(value) => handleMappingChange(actualTabIndex, mappingIndex, value)}
-                        >
-                          <SelectTrigger className="w-[180px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="max-h-[300px]">
-                            <SelectItem value="ignore">❌ Ignore</SelectItem>
-                            <SelectSeparator />
-                            <SelectGroup>
-                              <SelectLabel>Common Fields</SelectLabel>
-                              <SelectItem value="name">Name</SelectItem>
-                              <SelectItem value="email">Email</SelectItem>
-                              <SelectItem value="phone">Phone</SelectItem>
-                              <SelectItem value="status">Status</SelectItem>
-                              <SelectItem value="notes">Notes</SelectItem>
-                            </SelectGroup>
-                            <SelectSeparator />
-                            <SelectGroup>
-                              <SelectLabel>Team</SelectLabel>
-                              <SelectItem value="full_name">Full Name</SelectItem>
-                              <SelectItem value="role">Role</SelectItem>
-                            </SelectGroup>
-                            <SelectSeparator />
-                            <SelectGroup>
-                              <SelectLabel>Appointments</SelectLabel>
-                              <SelectItem value="scheduled_at">Scheduled At</SelectItem>
-                              <SelectItem value="booked_at">Booked At</SelectItem>
-                              <SelectItem value="appointment_status">Status</SelectItem>
-                            </SelectGroup>
-                            <SelectSeparator />
-                            <SelectGroup>
-                              <SelectLabel>Deals</SelectLabel>
-                              <SelectItem value="revenue_amount">Revenue</SelectItem>
-                              <SelectItem value="cash_collected">Cash Collected</SelectItem>
-                            </SelectGroup>
-                            <SelectSeparator />
-                            <SelectItem value="custom_fields">Custom Field</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        {mapping.dbField === 'custom_fields' && (
-                          <Input
-                            placeholder="Field name"
-                            value={mapping.customFieldKey || ''}
-                            onChange={(e) => handleCustomFieldKeyChange(actualTabIndex, mappingIndex, e.target.value)}
-                            className="mt-2 w-[180px]"
-                          />
-                        )}
-                      </TableCell>
-                      <TableCell>{getConfidenceBadge(mapping.confidence)}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate">
-                        {mapping.sampleValue}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {ta.mappings.length > 5 && (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground">
-                        +{ta.mappings.length - 5} more fields
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+              <div className="p-4 space-y-3">
+                {ta.mappings.map((mapping, mappingIndex) => (
+                  <div key={mappingIndex} className="flex items-center gap-3">
+                    <div className="w-1/3">
+                      <span className="text-sm font-medium">{mapping.sheetColumn}</span>
+                    </div>
+                    <span className="text-muted-foreground">→</span>
+                    <div className="flex-1 flex items-center gap-2">
+                      <Select
+                        value={mapping.dbField}
+                        onValueChange={(value) => handleMappingChange(actualTabIndex, mappingIndex, value)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DB_FIELD_OPTIONS.map(option => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {mapping.dbField === 'custom' && (
+                        <input
+                          type="text"
+                          placeholder="Field key"
+                          value={mapping.customFieldKey || ''}
+                          onChange={(e) => handleCustomFieldKeyChange(actualTabIndex, mappingIndex, e.target.value)}
+                          className="flex h-10 w-32 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        />
+                      )}
+                    </div>
+                    {getConfidenceBadge(mapping.confidence)}
+                  </div>
+                ))}
+              </div>
             </div>
           );
         })}
 
+        {/* Failed analyses warning */}
+        {failedAnalyses.length > 0 && (
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-yellow-900 dark:text-yellow-100">
+                  {failedAnalyses.length} tab{failedAnalyses.length !== 1 ? 's' : ''} could not be analyzed
+                </p>
+                <ul className="mt-1 text-sm text-yellow-800 dark:text-yellow-200">
+                  {failedAnalyses.map(ta => (
+                    <li key={ta.tab.sheetId}>
+                      • {ta.tab.title}: {ta.error}
+                      {ta.debugInfo?.requestId && (
+                        <span className="text-xs opacity-70"> (Request: {ta.debugInfo.requestId.slice(0, 8)})</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Connect button */}
-        <Button 
-          onClick={handleConnectAll}
-          disabled={connectingAll || successfulAnalyses.length === 0}
-          className="w-full gap-2"
-          size="lg"
-        >
-          {connectingAll ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Connecting...
-            </>
-          ) : (
-            <>
-              <Radio className="h-4 w-4" />
-              Connect {successfulAnalyses.length} Tab{successfulAnalyses.length !== 1 ? 's' : ''} & Start Syncing
-            </>
-          )}
-        </Button>
+        {successfulAnalyses.length > 0 && (
+          <Button 
+            onClick={handleConnectAll} 
+            disabled={connectingAll}
+            className="w-full"
+          >
+            {connectingAll ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Connecting...
+              </>
+            ) : (
+              <>
+                Connect & Start Syncing
+                <span className="ml-2 text-xs opacity-75">
+                  ({successfulAnalyses.length} tab{successfulAnalyses.length !== 1 ? 's' : ''})
+                </span>
+              </>
+            )}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );
