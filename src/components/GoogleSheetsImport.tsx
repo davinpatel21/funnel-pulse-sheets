@@ -436,15 +436,16 @@ export function GoogleSheetsImport({
 
   // Show analyzing progress
   if (!allAnalyzed) {
+    const completedCount = tabAnalyses.filter(t => t.analysis || t.error).length;
     const progress = tabAnalyses.length > 0 
-      ? ((currentAnalyzingIndex + 1) / tabAnalyses.length) * 100 
+      ? (completedCount / tabAnalyses.length) * 100 
       : 0;
 
     return (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
+            <Sparkles className="h-5 w-5 text-primary animate-pulse" />
             Analyzing {spreadsheetName}
           </CardTitle>
           <CardDescription>
@@ -452,46 +453,92 @@ export function GoogleSheetsImport({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <Progress value={progress} className="h-2" />
+          {/* Overall progress */}
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">
+                {currentAnalyzingIndex >= 0 && currentAnalyzingIndex < tabAnalyses.length
+                  ? `Analyzing "${tabAnalyses[currentAnalyzingIndex].tab.title}"...`
+                  : 'Starting analysis...'
+                }
+              </span>
+              <span className="font-medium">{completedCount}/{tabAnalyses.length} complete</span>
+            </div>
+            <Progress value={progress} className="h-2" />
+          </div>
           
-          <div className="space-y-3">
-            {tabAnalyses.map((ta, index) => (
-              <div 
-                key={ta.tab.sheetId}
-                className={`flex items-center gap-3 p-3 rounded-lg border ${
-                  index === currentAnalyzingIndex 
-                    ? 'border-primary bg-primary/5' 
-                    : ta.analysis 
-                      ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20' 
-                      : ta.error 
-                        ? 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20'
-                        : 'border-muted'
-                }`}
-              >
-                <div className="flex-shrink-0">
-                  {index === currentAnalyzingIndex ? (
-                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                  ) : ta.analysis ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-500" />
-                  ) : ta.error ? (
-                    <AlertCircle className="h-5 w-5 text-red-500" />
-                  ) : (
-                    <div className="h-5 w-5 rounded-full border-2 border-muted" />
-                  )}
+          {/* Tab list with visual indicators */}
+          <div className="space-y-2">
+            {tabAnalyses.map((ta, index) => {
+              const isActive = index === currentAnalyzingIndex;
+              const isComplete = !!ta.analysis;
+              const isFailed = !!ta.error;
+              const isPending = !isActive && !isComplete && !isFailed;
+              
+              return (
+                <div 
+                  key={ta.tab.sheetId}
+                  className={`flex items-center gap-3 p-3 rounded-lg border transition-all duration-300 ${
+                    isActive 
+                      ? 'border-primary bg-primary/5 shadow-sm ring-1 ring-primary/20' 
+                      : isComplete 
+                        ? 'border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-900/20' 
+                        : isFailed 
+                          ? 'border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-900/20'
+                          : 'border-muted bg-muted/20'
+                  }`}
+                >
+                  {/* Step indicator */}
+                  <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-300 ${
+                    isActive 
+                      ? 'bg-primary text-primary-foreground animate-pulse' 
+                      : isComplete 
+                        ? 'bg-green-500 text-white' 
+                        : isFailed 
+                          ? 'bg-red-500 text-white'
+                          : 'bg-muted text-muted-foreground'
+                  }`}>
+                    {isActive ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : isComplete ? (
+                      <CheckCircle2 className="h-4 w-4" />
+                    ) : isFailed ? (
+                      <AlertCircle className="h-4 w-4" />
+                    ) : (
+                      index + 1
+                    )}
+                  </div>
+                  
+                  {/* Tab info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className={`font-medium truncate ${isActive ? 'text-primary' : ''}`}>
+                        {ta.tab.title}
+                      </p>
+                      {isComplete && ta.analysis?.sheet_type && (
+                        <Badge variant="secondary" className="text-xs">
+                          {ta.analysis.sheet_type}
+                        </Badge>
+                      )}
+                    </div>
+                    {isActive && (
+                      <p className="text-sm text-primary/80">Analyzing columns and data...</p>
+                    )}
+                    {isComplete && (
+                      <p className="text-sm text-green-600 dark:text-green-400">
+                        {ta.analysis.totalRows} rows • {ta.mappings?.length || 0} columns mapped
+                      </p>
+                    )}
+                    {isFailed && (
+                      <p className="text-sm text-red-600 dark:text-red-400 truncate">{ta.error}</p>
+                    )}
+                    {isPending && (
+                      <p className="text-sm text-muted-foreground">Waiting...</p>
+                    )}
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <p className="font-medium">{ta.tab.title}</p>
-                  {ta.analysis && (
-                    <p className="text-sm text-muted-foreground">
-                      Detected as {ta.analysis.sheet_type} • {ta.analysis.totalRows} rows
-                    </p>
-                  )}
-                  {ta.error && (
-                    <p className="text-sm text-red-600 dark:text-red-400">{ta.error}</p>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>
