@@ -6,15 +6,51 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Error codes for frontend handling
+type ErrorCode = 
+  | 'AUTH_REQUIRED'
+  | 'SESSION_EXPIRED'
+  | 'CONFIG_NOT_FOUND'
+  | 'INVALID_SHEET_URL'
+  | 'SHEET_ACCESS_DENIED'
+  | 'INVALID_REQUEST'
+  | 'INTERNAL_ERROR';
+
+function errorResponse(
+  message: string, 
+  code: ErrorCode, 
+  status: number,
+  details?: string
+): Response {
+  console.error(`Error [${code}]: ${message}`, details ? `- ${details}` : '');
+  return new Response(
+    JSON.stringify({ 
+      error: message, 
+      code, 
+      status,
+      ...(details && { details })
+    }),
+    { 
+      status, 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    }
+  );
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // Check authorization header
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-      throw new Error('Missing authorization header');
+      return errorResponse(
+        'Please sign in to access your Google Sheets data',
+        'AUTH_REQUIRED',
+        401
+      );
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -23,12 +59,36 @@ serve(async (req) => {
       global: { headers: { Authorization: authHeader } }
     });
 
+    // Validate user session
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
-      throw new Error('Unauthorized');
+      return errorResponse(
+        'Your session has expired. Please sign in again',
+        'SESSION_EXPIRED',
+        401,
+        userError?.message
+      );
     }
 
-    const { configuration_id } = await req.json();
+    // Parse request body
+    let configuration_id: string;
+    try {
+      const body = await req.json();
+      configuration_id = body.configuration_id;
+      if (!configuration_id) {
+        return errorResponse(
+          'Sheet configuration ID is required',
+          'INVALID_REQUEST',
+          400
+        );
+      }
+    } catch {
+      return errorResponse(
+        'Invalid request format',
+        'INVALID_REQUEST',
+        400
+      );
+    }
 
     // Fetch the configuration (shared across all authenticated team members)
     const { data: config, error: configError } = await supabase
@@ -39,13 +99,22 @@ serve(async (req) => {
       .single();
 
     if (configError || !config) {
-      throw new Error('Configuration not found');
+      return errorResponse(
+        'This sheet connection is no longer active. Please reconnect your sheet in Settings',
+        'CONFIG_NOT_FOUND',
+        404,
+        configError?.message
+      );
     }
 
     // Extract sheet ID from URL
     const sheetId = extractSheetId(config.sheet_url);
     if (!sheetId) {
-      throw new Error('Invalid sheet URL');
+      return errorResponse(
+        'The Google Sheet URL appears to be invalid. Please check your configuration in Settings',
+        'INVALID_SHEET_URL',
+        400
+      );
     }
 
     // Fetch data from Google Sheets (CSV export)
@@ -58,10 +127,34 @@ serve(async (req) => {
     
     const csvResponse = await fetch(csvUrl);
     if (!csvResponse.ok) {
-      throw new Error('Failed to fetch sheet data. Make sure the sheet is publicly accessible.');
+      // Check for common Google Sheets access errors
+      if (csvResponse.status === 404) {
+        return errorResponse(
+          'The Google Sheet could not be found. It may have been deleted or moved',
+          'SHEET_ACCESS_DENIED',
+          502
+        );
+      }
+      return errorResponse(
+        'Unable to access the Google Sheet. Make sure it\'s set to "Anyone with the link can view"',
+        'SHEET_ACCESS_DENIED',
+        502,
+        `Google returned status ${csvResponse.status}`
+      );
     }
 
     const csvText = await csvResponse.text();
+    
+    // Check if we got an HTML error page instead of CSV
+    if (csvText.includes('<!DOCTYPE html>') || csvText.includes('<html')) {
+      return errorResponse(
+        'Unable to access the Google Sheet. Make sure it\'s set to "Anyone with the link can view"',
+        'SHEET_ACCESS_DENIED',
+        502,
+        'Received HTML instead of CSV data'
+      );
+    }
+    
     console.log(`Fetched CSV from sheet ${sheetId}, length: ${csvText.length} chars`);
     
     const rows = parseCsv(csvText);
@@ -166,11 +259,13 @@ serve(async (req) => {
     );
 
   } catch (error: unknown) {
-    console.error('Error in google-sheets-live:', error);
+    console.error('Unexpected error in google-sheets-live:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(
-      JSON.stringify({ error: message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    return errorResponse(
+      'Something went wrong while syncing your sheet. Please try again',
+      'INTERNAL_ERROR',
+      500,
+      message
     );
   }
 });
