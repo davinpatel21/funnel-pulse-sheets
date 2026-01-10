@@ -96,11 +96,25 @@ Deno.serve(async (req) => {
       // Handle Google OAuth errors (user denied, etc.)
       if (errorParam) {
         console.error('Google OAuth error:', errorParam);
-        const frontendUrl = Deno.env.get('FRONTEND_URL') || supabaseUrl.replace('.supabase.co', '.lovable.app');
+        // Try to extract redirect origin from state if available
+        let errorRedirectUrl = Deno.env.get('FRONTEND_URL');
+        if (!errorRedirectUrl && state) {
+          try {
+            const decoded = JSON.parse(atob(state));
+            errorRedirectUrl = decoded.redirectOrigin;
+          } catch (e) {
+            // Ignore parse error
+          }
+        }
+        if (!errorRedirectUrl) {
+          errorRedirectUrl = 'https://funnel-pulse-sheets.lovable.app';
+        }
+        errorRedirectUrl = errorRedirectUrl.replace(/\/$/, '');
+        
         return new Response(null, {
           status: 302,
           headers: {
-            'Location': `${frontendUrl}/settings?oauth=error&reason=${encodeURIComponent(errorParam)}`,
+            'Location': `${errorRedirectUrl}/settings?oauth=error&reason=${encodeURIComponent(errorParam)}`,
           },
         });
       }
@@ -136,11 +150,11 @@ Deno.serve(async (req) => {
       if (!tokenResponse.ok) {
         const error = await tokenResponse.text();
         console.error('Token exchange failed:', error);
-        const frontendUrl = Deno.env.get('FRONTEND_URL') || redirectOrigin || supabaseUrl.replace('.supabase.co', '.lovable.app');
+        const frontendUrl = Deno.env.get('FRONTEND_URL') || redirectOrigin || 'https://funnel-pulse-sheets.lovable.app';
         return new Response(null, {
           status: 302,
           headers: {
-            'Location': `${frontendUrl}/settings?oauth=error&reason=token_exchange_failed`,
+            'Location': `${frontendUrl.replace(/\/$/, '')}/settings?oauth=error&reason=token_exchange_failed`,
           },
         });
       }
@@ -164,11 +178,11 @@ Deno.serve(async (req) => {
 
       if (dbError) {
         console.error('Database error:', dbError);
-        const frontendUrl = Deno.env.get('FRONTEND_URL') || redirectOrigin || supabaseUrl.replace('.supabase.co', '.lovable.app');
+        const frontendUrl = Deno.env.get('FRONTEND_URL') || redirectOrigin || 'https://funnel-pulse-sheets.lovable.app';
         return new Response(null, {
           status: 302,
           headers: {
-            'Location': `${frontendUrl}/settings?oauth=error&reason=storage_failed`,
+            'Location': `${frontendUrl.replace(/\/$/, '')}/settings?oauth=error&reason=storage_failed`,
           },
         });
       }
@@ -182,8 +196,8 @@ Deno.serve(async (req) => {
       } else if (redirectOrigin) {
         finalRedirectUrl = `${redirectOrigin.replace(/\/$/, '')}/settings?oauth=success`;
       } else {
-        // Fallback to original behavior
-        finalRedirectUrl = `${supabaseUrl.replace('.supabase.co', '.lovable.app')}/settings?oauth=success`;
+        // Fallback to hardcoded domain
+        finalRedirectUrl = 'https://funnel-pulse-sheets.lovable.app/settings?oauth=success';
       }
 
       console.log('OAuth successful, redirecting to:', finalRedirectUrl);
