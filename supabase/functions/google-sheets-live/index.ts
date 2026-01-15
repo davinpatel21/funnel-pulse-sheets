@@ -371,9 +371,12 @@ serve(async (req) => {
           record.lead_name = record.lead_name || record.name || record.full_name;
           record.lead_email = record.lead_email || record.email;
           record.scheduled_for = record.scheduled_for || record.scheduled_at || record.booking_time || combineDateTimeFields(record);
-          record.setter_name = record.setter_name || record.setter;
-          record.closer_name = record.closer_name || record.closer;
+          record.setter_name = record.setter_name || record.setter || record.set_by;
+          record.closer_name = record.closer_name || record.closer || record.closer_assigned;
           record.status = normalizeAppointmentStatus(record.status || record.call_status);
+          // Form compliance tracking - checkmark/TRUE = filled, empty/null = not filled
+          record.post_set_form_filled = !!(record.post_set_form_filled || record.post_set_form || record.postsetter_form);
+          record.closer_form_filled = !!(record.closer_form_filled || record.closer_form || record.closer_form_status);
           break;
 
         case 'calls':
@@ -381,11 +384,14 @@ serve(async (req) => {
           record.lead_name = record.lead_name || record.name || record.full_name;
           record.lead_email = record.lead_email || record.email;
           record.call_time = record.call_time || record.created_at || record.date;
-          record.setter_name = record.setter_name || record.setter;
-          record.closer_name = record.closer_name || record.closer;
+          record.setter_name = record.setter_name || record.setter || record.set_by;
+          record.closer_name = record.closer_name || record.closer || record.closer_assigned;
           record.status = normalizeCallStatus(record.status || record.call_status);
           record.duration_seconds = parseInt(record.duration_seconds || record.duration || '0') || 0;
           record.call_notes = record.call_notes || record.notes;
+          // Form compliance tracking - checkmark/TRUE = filled, empty/null = not filled
+          record.post_set_form_filled = !!(record.post_set_form_filled || record.post_set_form || record.postsetter_form);
+          record.closer_form_filled = !!(record.closer_form_filled || record.closer_form || record.closer_form_status);
           break;
 
         case 'deals':
