@@ -481,8 +481,11 @@ APPOINTMENT FIELDS:
 - "Recording" / "Recording URL" → dbField: "recording_url" (appointments.recording_url) - SKIP if value is "IN CRM"
 - "Post Call Form" / "Form" → dbField: "post_call_form_url" (appointments.post_call_form_url)
 - "Call Notes" / "Notes" → dbField: "notes" (appointments.notes)
-- "Closer Form Filled" → dbField: "closer_form_status" (appointments.closer_form_status)
 - "Pipeline" → dbField: "pipeline" (appointments.pipeline)
+
+FORM COMPLIANCE FIELDS (Checkbox/Boolean columns - checkmark=filled, empty=not filled):
+- "Post Set Form" / "Post Setter Form" / "Post Set" → dbField: "post_set_form_filled" - TRUE/checkmark = form was filled
+- "Closer Form Filled" / "Closer Form" / "Post Call Form Filled" → dbField: "closer_form_filled" - TRUE/checkmark = form was filled
 
 STATUS MAPPING (CRITICAL):
 - "Call Status" / "Status" / "Result" → dbField: "call_status" (custom_fields.call_status)

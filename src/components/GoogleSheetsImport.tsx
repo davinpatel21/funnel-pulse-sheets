@@ -55,6 +55,12 @@ const DB_FIELD_OPTIONS = [
   { value: 'booked_at', label: 'Booked At' },
   { value: 'full_name', label: 'Full Name (Team)' },
   { value: 'role', label: 'Role (Team)' },
+  // Form compliance fields
+  { value: 'post_set_form_filled', label: 'Post Set Form (Checkbox)' },
+  { value: 'closer_form_filled', label: 'Closer Form Filled (Checkbox)' },
+  // Additional useful fields
+  { value: 'call_status', label: 'Call Status/Result' },
+  { value: 'recording_url', label: 'Recording URL' },
   { value: 'custom', label: '→ Custom Field' },
   { value: 'skip', label: '✕ Skip this column' },
 ];

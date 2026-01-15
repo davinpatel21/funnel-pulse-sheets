@@ -375,8 +375,15 @@ serve(async (req) => {
           record.closer_name = record.closer_name || record.closer || record.closer_assigned;
           record.status = normalizeAppointmentStatus(record.status || record.call_status);
           // Form compliance tracking - checkmark/TRUE = filled, empty/null = not filled
-          record.post_set_form_filled = !!(record.post_set_form_filled || record.post_set_form || record.postsetter_form);
-          record.closer_form_filled = !!(record.closer_form_filled || record.closer_form || record.closer_form_status);
+          // Support multiple column name variants for auto-detection
+          record.post_set_form_filled = !!(
+            record.post_set_form_filled || record.post_set_form || record.postsetter_form ||
+            record.post_setter_form || record.postsetform || record.post_set
+          );
+          record.closer_form_filled = !!(
+            record.closer_form_filled || record.closer_form || record.closer_form_status ||
+            record.closerformfilled || record.closer_form_completed || record.post_call_form_filled
+          );
           break;
 
         case 'calls':
@@ -390,8 +397,15 @@ serve(async (req) => {
           record.duration_seconds = parseInt(record.duration_seconds || record.duration || '0') || 0;
           record.call_notes = record.call_notes || record.notes;
           // Form compliance tracking - checkmark/TRUE = filled, empty/null = not filled
-          record.post_set_form_filled = !!(record.post_set_form_filled || record.post_set_form || record.postsetter_form);
-          record.closer_form_filled = !!(record.closer_form_filled || record.closer_form || record.closer_form_status);
+          // Support multiple column name variants for auto-detection
+          record.post_set_form_filled = !!(
+            record.post_set_form_filled || record.post_set_form || record.postsetter_form ||
+            record.post_setter_form || record.postsetform || record.post_set
+          );
+          record.closer_form_filled = !!(
+            record.closer_form_filled || record.closer_form || record.closer_form_status ||
+            record.closerformfilled || record.closer_form_completed || record.post_call_form_filled
+          );
           break;
 
         case 'deals':
