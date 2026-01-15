@@ -9,6 +9,7 @@ import {
   CheckCircle,
   XCircle,
   Calendar,
+  ClipboardCheck,
 } from "lucide-react";
 
 interface MetricsGridProps {
@@ -29,6 +30,10 @@ interface MetricsGridProps {
     showRate: number;
     totalLeads: number;
     processorFeePercentage: number;
+    // Form compliance metrics (optional for database mode)
+    setterFormComplianceRate?: number;
+    closerFormComplianceRate?: number;
+    isLiveMode?: boolean;
   };
   isLoading?: boolean;
 }
@@ -65,6 +70,14 @@ export const MetricsGrid = ({ metrics, isLoading }: MetricsGridProps) => {
     showRate: metrics.showRate ?? 0,
     totalLeads: metrics.totalLeads ?? 0,
     processorFeePercentage: metrics.processorFeePercentage ?? 0,
+    setterFormComplianceRate: metrics.setterFormComplianceRate ?? 0,
+    closerFormComplianceRate: metrics.closerFormComplianceRate ?? 0,
+  };
+
+  const getComplianceColor = (rate: number) => {
+    if (rate >= 90) return "text-success";
+    if (rate >= 70) return "text-warning";
+    return "text-destructive";
   };
 
   return (
@@ -136,7 +149,7 @@ export const MetricsGrid = ({ metrics, isLoading }: MetricsGridProps) => {
       </div>
 
       {/* Show Rate Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         <MetricCard
           title="Show Rate"
           value={`${safeMetrics.showRate.toFixed(1)}%`}
@@ -156,6 +169,24 @@ export const MetricsGrid = ({ metrics, isLoading }: MetricsGridProps) => {
           iconColor="text-warning"
         />
       </div>
+
+      {/* Form Compliance Metrics - Only show in live mode with data */}
+      {metrics.isLiveMode && (safeMetrics.setterFormComplianceRate > 0 || safeMetrics.closerFormComplianceRate > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <MetricCard
+            title="Setter Form Rate"
+            value={`${safeMetrics.setterFormComplianceRate.toFixed(0)}%`}
+            icon={ClipboardCheck}
+            iconColor={getComplianceColor(safeMetrics.setterFormComplianceRate)}
+          />
+          <MetricCard
+            title="Closer Form Rate"
+            value={`${safeMetrics.closerFormComplianceRate.toFixed(0)}%`}
+            icon={ClipboardCheck}
+            iconColor={getComplianceColor(safeMetrics.closerFormComplianceRate)}
+          />
+        </div>
+      )}
     </>
   );
 };

@@ -255,6 +255,84 @@ function calculateMetrics(leads: any[], appointments: any[], deals: any[], calls
     leadSourceCounts[source] = (leadSourceCounts[source] || 0) + 1;
   });
 
+  // FORM COMPLIANCE METRICS
+  // Setter form compliance (for all appointments with a setter)
+  const appointmentsWithSetter = appointments.filter(a => 
+    a.setter_name || a.custom_fields?.setterName || a.custom_fields?.setBy
+  );
+  const setterFormsFilled = appointmentsWithSetter.filter(a => 
+    a.post_set_form_filled || a.custom_fields?.postSetFormFilled
+  ).length;
+  const setterFormComplianceRate = appointmentsWithSetter.length > 0 
+    ? (setterFormsFilled / appointmentsWithSetter.length) * 100 
+    : 0;
+
+  // Closer form compliance (only for completed/attended appointments)
+  const completedAppointments = appointments.filter(a => {
+    const status = getCallStatus(a);
+    return a.status === 'completed' || status === 'closed' || status === 'no close';
+  });
+  const closerFormsFilled = completedAppointments.filter(a => 
+    a.closer_form_filled || a.custom_fields?.closerFormFilled
+  ).length;
+  const closerFormComplianceRate = completedAppointments.length > 0 
+    ? (closerFormsFilled / completedAppointments.length) * 100 
+    : 0;
+
+  // Missing forms (for "Who's Dropping the Ball" section)
+  const missingSetterForms = appointmentsWithSetter.filter(a => 
+    !a.post_set_form_filled && !a.custom_fields?.postSetFormFilled
+  ).map(a => ({
+    id: a.appointment_id || a.id,
+    leadName: a.lead_name || a.name,
+    personName: a.setter_name || a.custom_fields?.setterName || a.custom_fields?.setBy || 'Unknown',
+    formType: 'setter' as const,
+    bookedAt: a.booked_at || a.scheduled_for || a.created_at,
+  }));
+
+  const missingCloserForms = completedAppointments.filter(a => 
+    !a.closer_form_filled && !a.custom_fields?.closerFormFilled
+  ).map(a => ({
+    id: a.appointment_id || a.id,
+    leadName: a.lead_name || a.name,
+    personName: a.closer_name || a.custom_fields?.closerName || a.pipeline || 'Unknown',
+    formType: 'closer' as const,
+    bookedAt: a.booked_at || a.scheduled_for || a.created_at,
+  }));
+
+  // Per-person compliance breakdown
+  const setterCompliance: Record<string, { total: number; filled: number; rate: number }> = {};
+  appointmentsWithSetter.forEach(a => {
+    const setter = a.setter_name || a.custom_fields?.setterName || a.custom_fields?.setBy || 'Unknown';
+    if (!setterCompliance[setter]) {
+      setterCompliance[setter] = { total: 0, filled: 0, rate: 0 };
+    }
+    setterCompliance[setter].total++;
+    if (a.post_set_form_filled || a.custom_fields?.postSetFormFilled) {
+      setterCompliance[setter].filled++;
+    }
+  });
+  Object.keys(setterCompliance).forEach(setter => {
+    const data = setterCompliance[setter];
+    data.rate = data.total > 0 ? (data.filled / data.total) * 100 : 0;
+  });
+
+  const closerCompliance: Record<string, { total: number; filled: number; rate: number }> = {};
+  completedAppointments.forEach(a => {
+    const closer = a.closer_name || a.custom_fields?.closerName || a.pipeline || 'Unknown';
+    if (!closerCompliance[closer]) {
+      closerCompliance[closer] = { total: 0, filled: 0, rate: 0 };
+    }
+    closerCompliance[closer].total++;
+    if (a.closer_form_filled || a.custom_fields?.closerFormFilled) {
+      closerCompliance[closer].filled++;
+    }
+  });
+  Object.keys(closerCompliance).forEach(closer => {
+    const data = closerCompliance[closer];
+    data.rate = data.total > 0 ? (data.filled / data.total) * 100 : 0;
+  });
+
   return {
     totalRevenue,
     totalCashCollected,
@@ -279,6 +357,17 @@ function calculateMetrics(leads: any[], appointments: any[], deals: any[], calls
     paymentPlatforms,
     appointmentStatusCounts,
     leadSourceCounts,
+    // Form compliance metrics
+    setterFormComplianceRate,
+    closerFormComplianceRate,
+    setterFormsFilled,
+    closerFormsFilled,
+    totalSetterFormsRequired: appointmentsWithSetter.length,
+    totalCloserFormsRequired: completedAppointments.length,
+    missingSetterForms,
+    missingCloserForms,
+    setterCompliance,
+    closerCompliance,
   };
 }
 
@@ -307,5 +396,16 @@ function getEmptyMetrics() {
     paymentPlatforms: {},
     appointmentStatusCounts: {},
     leadSourceCounts: {},
+    // Form compliance metrics
+    setterFormComplianceRate: 0,
+    closerFormComplianceRate: 0,
+    setterFormsFilled: 0,
+    closerFormsFilled: 0,
+    totalSetterFormsRequired: 0,
+    totalCloserFormsRequired: 0,
+    missingSetterForms: [],
+    missingCloserForms: [],
+    setterCompliance: {},
+    closerCompliance: {},
   };
 }

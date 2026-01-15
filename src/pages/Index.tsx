@@ -3,6 +3,7 @@ import { DashboardFilters } from "@/components/DashboardFilters";
 import { MetricsGrid } from "@/components/MetricsGrid";
 import { ChartsSection } from "@/components/ChartsSection";
 import { LeadsTable } from "@/components/LeadsTable";
+import { FormComplianceSection } from "@/components/FormComplianceSection";
 import { useDashboardMetrics, type DashboardFilters as Filters } from "@/hooks/useDashboardMetrics";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -61,6 +62,22 @@ const Index = () => {
           {metrics && (
             <>
               <MetricsGrid metrics={metrics} isLoading={isLoading} />
+              
+              {/* Form Compliance & Accountability Section */}
+              {metrics.isLiveMode && (
+                <FormComplianceSection
+                  setterFormComplianceRate={metrics.setterFormComplianceRate || 0}
+                  closerFormComplianceRate={metrics.closerFormComplianceRate || 0}
+                  setterFormsFilled={metrics.setterFormsFilled || 0}
+                  closerFormsFilled={metrics.closerFormsFilled || 0}
+                  totalSetterFormsRequired={metrics.totalSetterFormsRequired || 0}
+                  totalCloserFormsRequired={metrics.totalCloserFormsRequired || 0}
+                  missingSetterForms={metrics.missingSetterForms || []}
+                  missingCloserForms={metrics.missingCloserForms || []}
+                  setterCompliance={metrics.setterCompliance || {}}
+                  closerCompliance={metrics.closerCompliance || {}}
+                />
+              )}
               
               {/* Charts Section */}
               <ChartsSection
