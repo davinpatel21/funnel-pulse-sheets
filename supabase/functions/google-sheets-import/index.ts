@@ -457,14 +457,36 @@ async function analyzeSheet(requestId: string, req: Request, supabase: any, user
 CRITICAL: THIS SHEET STRUCTURE IS THE ABSOLUTE STANDARD FOR ALL MAPPINGS.
 The user's sheet contains these EXACT columns that map to a complete sales funnel:
 
-SHEET TYPE DETECTION:
-1. If you see columns like "Booking Time", "Appointment Date", "Call Status", "Revenue", "Closer Assigned" → this is "appointments" type
-   This single sheet tracks the ENTIRE sales funnel from lead → appointment → call → deal in one view.
-2. If you see columns like "Full Name", "Email", "Role", "Phone" WITHOUT appointment/booking fields → this is "team" type
-   This sheet tracks team members/profiles (closers, setters, admins).
-3. Otherwise → this is "leads" type
+SHEET TYPE DETECTION (IN ORDER OF PRIORITY):
 
-EXACT COLUMN MAPPINGS (match these precisely):
+1. "deals" type - POST CALL SHEET where closers log deal outcomes. If you see:
+   - "Revenue" / "Revenue Amount" / "Cash Collected" / "Total Collected" / "Amount Paid"
+   - "Deal Status" / "Sale Status" / "Closed" / "Won/Lost"
+   - "Payment Platform" / "Payment Method" / "Stripe" / "PayPal"
+   - "Fees" / "Fees Amount" / "Processing Fees"
+   → This is the POST CALL sheet for tracking REVENUE and DEAL OUTCOMES
+   
+2. "appointments" type - CALL LOG SHEET tracking booked appointments. If you see:
+   - "Booking Time" / "Appointment Date" / "Scheduled At" / "Call Time"
+   - "Closer Assigned" / "Set By" / "Setter"
+   - "Post Set Form" / "Closer Form Filled" (compliance checkboxes)
+   - "Call Status" (Closed, No Close, No Show, Rescheduled, etc.)
+   - "Recording" / "Recording URL"
+   → This tracks SCHEDULED APPOINTMENTS and form compliance, NOT revenue
+   
+3. "calls" type - If you see:
+   - "Call Duration" / "Duration Minutes" / "Was Live"
+   - "Call Recording" / "Recording URL"
+   - Individual call records (not bookings)
+   
+4. "team" type - If you see:
+   - "Full Name" + "Email" + "Role" columns
+   - Team member names (setters, closers)
+   - NO appointment or deal fields
+
+5. "leads" type - Default for everything else with contact info
+
+EXACT COLUMN MAPPINGS:
 
 LEAD IDENTIFICATION FIELDS:
 - "Lead Name" / "Name" → dbField: "name" (leads.name)
@@ -473,7 +495,7 @@ LEAD IDENTIFICATION FIELDS:
 - "UTM Source" / "Source" → dbField: "utm_source" (leads.utm_source) - store raw value
 - "Set By" / "Setter" → dbField: "setter_name" (custom_fields.setter_name) - will lookup profile
 
-APPOINTMENT FIELDS:
+APPOINTMENT FIELDS (for appointments type):
 - "Booking Time" / "Booked At" → dbField: "booked_at" (appointments.booked_at)
 - "Appointment Date" + "Appointment Time" + "Raw Date" → dbField: "scheduled_at" (appointments.scheduled_at) - COMBINE THESE
 - "Closer Assigned" / "Closer" → dbField: "closer_name" (custom_fields.closer_name) - will lookup profile
@@ -486,6 +508,14 @@ APPOINTMENT FIELDS:
 FORM COMPLIANCE FIELDS (Checkbox/Boolean columns - checkmark=filled, empty=not filled):
 - "Post Set Form" / "Post Setter Form" / "Post Set" → dbField: "post_set_form_filled" - TRUE/checkmark = form was filled
 - "Closer Form Filled" / "Closer Form" / "Post Call Form Filled" → dbField: "closer_form_filled" - TRUE/checkmark = form was filled
+
+DEAL/REVENUE FIELDS (for deals type - POST CALL SHEET):
+- "Revenue" / "Revenue Amount" / "Total Revenue" / "Sale Amount" → dbField: "revenue_amount"
+- "Cash Collected" / "Amount Paid" / "Collected" → dbField: "cash_collected"
+- "Fees" / "Fees Amount" / "Processing Fees" → dbField: "fees_amount"
+- "Deal Status" / "Sale Status" / "Won/Lost" → dbField: "deal_status"
+- "Payment Platform" / "Payment Method" → dbField: "payment_platform"
+- "Closed Date" / "Close Date" → dbField: "closed_at"
 
 STATUS MAPPING (CRITICAL):
 - "Call Status" / "Status" / "Result" → dbField: "call_status" (custom_fields.call_status)

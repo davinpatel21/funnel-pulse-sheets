@@ -29,6 +29,7 @@ interface TabAnalysis {
   tab: SheetTab;
   analysis: any;
   mappings: Mapping[];
+  sheetTypeOverride?: string; // User can override AI-detected type
   error?: string;
   debugInfo?: { requestId?: string; rawError?: string };
 }
@@ -41,26 +42,54 @@ interface GoogleSheetsImportProps {
   sheetTitle?: string;
 }
 
+const SHEET_TYPE_OPTIONS = [
+  { value: 'leads', label: 'Leads', description: 'Contact info, lead sources' },
+  { value: 'appointments', label: 'Appointments (Call Log)', description: 'Booked calls, form compliance' },
+  { value: 'calls', label: 'Calls', description: 'Individual call records' },
+  { value: 'deals', label: 'Deals (Post Call)', description: 'Revenue, cash collected, deal outcomes' },
+  { value: 'team', label: 'Team', description: 'Team member profiles' },
+];
+
 const DB_FIELD_OPTIONS = [
+  // Common fields
   { value: 'name', label: 'Name' },
   { value: 'email', label: 'Email' },
   { value: 'phone', label: 'Phone' },
+  { value: 'notes', label: 'Notes' },
+  
+  // Lead fields
   { value: 'source', label: 'Lead Source' },
   { value: 'status', label: 'Status' },
-  { value: 'notes', label: 'Notes' },
   { value: 'utm_source', label: 'UTM Source' },
+  
+  // Appointment/Call fields
   { value: 'setter_id', label: 'Setter' },
   { value: 'closer_id', label: 'Closer' },
+  { value: 'setter_name', label: 'Setter Name' },
+  { value: 'closer_name', label: 'Closer Name' },
   { value: 'scheduled_at', label: 'Scheduled At' },
   { value: 'booked_at', label: 'Booked At' },
-  { value: 'full_name', label: 'Full Name (Team)' },
-  { value: 'role', label: 'Role (Team)' },
+  { value: 'pipeline', label: 'Pipeline' },
+  
   // Form compliance fields
   { value: 'post_set_form_filled', label: 'Post Set Form (Checkbox)' },
   { value: 'closer_form_filled', label: 'Closer Form Filled (Checkbox)' },
-  // Additional useful fields
   { value: 'call_status', label: 'Call Status/Result' },
   { value: 'recording_url', label: 'Recording URL' },
+  
+  // Deal/Revenue fields (for Post Call sheet)
+  { value: 'revenue_amount', label: 'Revenue Amount ($)' },
+  { value: 'cash_collected', label: 'Cash Collected ($)' },
+  { value: 'fees_amount', label: 'Fees Amount ($)' },
+  { value: 'deal_status', label: 'Deal Status' },
+  { value: 'payment_platform', label: 'Payment Platform' },
+  { value: 'closed_at', label: 'Closed At (Date)' },
+  
+  // Team fields
+  { value: 'full_name', label: 'Full Name (Team)' },
+  { value: 'role', label: 'Role (Team)' },
+  
+  // Universal
   { value: 'custom', label: '→ Custom Field' },
   { value: 'skip', label: '✕ Skip this column' },
 ];
@@ -285,6 +314,14 @@ export function GoogleSheetsImport({
     }
   };
 
+  const handleSheetTypeChange = (tabIndex: number, newType: string) => {
+    setTabAnalyses(prev => {
+      const updated = [...prev];
+      updated[tabIndex] = { ...updated[tabIndex], sheetTypeOverride: newType };
+      return updated;
+    });
+  };
+
   const retryFailedTab = async (tabIndex: number) => {
     setTabAnalyses(prev => {
       const updated = [...prev];
@@ -329,6 +366,8 @@ export function GoogleSheetsImport({
       if (!tabAnalysis.analysis || tabAnalysis.error) continue;
 
       const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${tabAnalysis.tab.sheetId}`;
+      // Use override if set, otherwise use AI-detected type
+      const sheetType = tabAnalysis.sheetTypeOverride || tabAnalysis.analysis.sheet_type;
       
       try {
         const { error } = await supabase
@@ -337,7 +376,7 @@ export function GoogleSheetsImport({
             user_id: userId,
             sheet_url: sheetUrl,
             sheet_name: tabAnalysis.tab.title,
-            sheet_type: tabAnalysis.analysis.sheet_type,
+            sheet_type: sheetType,
             mappings: tabAnalysis.mappings as any,
             is_active: true,
           });
@@ -637,6 +676,7 @@ export function GoogleSheetsImport({
         {/* Individual tab mappings */}
         {successfulAnalyses.map((ta) => {
           const actualTabIndex = tabAnalyses.findIndex(t => t.tab.sheetId === ta.tab.sheetId);
+          const currentType = ta.sheetTypeOverride || ta.analysis?.sheet_type;
           
           return (
             <div key={ta.tab.sheetId} className="border rounded-lg overflow-hidden">
@@ -644,12 +684,42 @@ export function GoogleSheetsImport({
                 <div className="flex items-center gap-2">
                   <FileSpreadsheet className="h-4 w-4" />
                   <span className="font-medium">{ta.tab.title}</span>
-                  <Badge variant="outline" className="capitalize">{ta.analysis?.sheet_type}</Badge>
                 </div>
                 <span className="text-sm text-muted-foreground">
                   {ta.analysis?.totalRows} rows • {ta.mappings.length} fields
                 </span>
               </div>
+              
+              {/* Sheet Type Override Dropdown */}
+              <div className="px-4 py-3 border-b bg-accent/30">
+                <div className="flex items-center gap-3">
+                  <label className="text-sm font-medium whitespace-nowrap">Sheet Type:</label>
+                  <Select
+                    value={currentType}
+                    onValueChange={(value) => handleSheetTypeChange(actualTabIndex, value)}
+                  >
+                    <SelectTrigger className="w-64">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SHEET_TYPE_OPTIONS.map(opt => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          <div className="flex flex-col">
+                            <span className="font-medium">{opt.label}</span>
+                            <span className="text-xs text-muted-foreground">{opt.description}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {ta.sheetTypeOverride && ta.sheetTypeOverride !== ta.analysis?.sheet_type && (
+                    <Badge variant="outline" className="text-xs bg-amber-100 dark:bg-amber-900/30">
+                      Changed from "{ta.analysis?.sheet_type}"
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
               <div className="p-4 space-y-3">
                 {ta.mappings.map((mapping, mappingIndex) => (
                   <div key={mappingIndex} className="flex items-center gap-3">

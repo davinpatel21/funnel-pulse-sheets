@@ -6,9 +6,10 @@ import { useSheetConfigurations } from "@/hooks/useSheetConfigurations";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Radio, Trash2, ExternalLink, RefreshCw, FileSpreadsheet, AlertTriangle } from "lucide-react";
+import { Loader2, Radio, Trash2, ExternalLink, RefreshCw, FileSpreadsheet, AlertTriangle, Pencil } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { LiveDataDebugger } from "./LiveDataDebugger";
+import { SheetConfigEditor } from "./SheetConfigEditor";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +27,7 @@ export function ConnectedSheets() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [disconnectAllOpen, setDisconnectAllOpen] = useState(false);
+  const [editingConfigId, setEditingConfigId] = useState<string | null>(null);
   
   // Group configurations by sheet URL to show workbook organization
   const groupByWorkbook = (configs: any[]) => {
@@ -251,23 +253,44 @@ export function ConnectedSheets() {
                         </p>
                       )}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => disconnectMutation.mutate(config.id)}
-                      disabled={disconnectMutation.isPending}
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                    >
-                      {disconnectMutation.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setEditingConfigId(editingConfigId === config.id ? null : config.id)}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => disconnectMutation.mutate(config.id)}
+                        disabled={disconnectMutation.isPending}
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      >
+                        {disconnectMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                   <div className="text-xs text-muted-foreground bg-muted/50 rounded p-2">
                     {(config.mappings as any[]).length} fields mapped
                   </div>
+                  
+                  {/* Edit Configuration Panel */}
+                  {editingConfigId === config.id && (
+                    <SheetConfigEditor
+                      configId={config.id}
+                      sheetName={config.sheet_name || 'Unknown'}
+                      sheetType={config.sheet_type}
+                      mappings={config.mappings as any[]}
+                      onClose={() => setEditingConfigId(null)}
+                    />
+                  )}
                   
                   <LiveDataDebugger configId={config.id} />
                 </div>
