@@ -93,9 +93,17 @@ const DB_FIELD_OPTIONS = [
   { value: 'skip', label: '✕ Skip this column', types: ['leads', 'appointments', 'calls', 'deals', 'team'] },
 ];
 
-// Helper to get contextual field options based on sheet type
+// Helper to get contextual field options - show all fields but prioritize by type
 const getFieldOptionsForType = (sheetType: string) => {
-  return DB_FIELD_OPTIONS.filter(opt => opt.types.includes(sheetType));
+  // Sort by relevance - type-specific fields first, then universal fields
+  return [...DB_FIELD_OPTIONS].sort((a, b) => {
+    const aMatch = a.types.includes(sheetType);
+    const bMatch = b.types.includes(sheetType);
+    // Prioritize type-specific fields
+    if (aMatch && !bMatch) return -1;
+    if (!aMatch && bMatch) return 1;
+    return 0;
+  });
 };
 
 export function GoogleSheetsImport({ 
