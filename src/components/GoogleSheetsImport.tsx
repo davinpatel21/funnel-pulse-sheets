@@ -56,9 +56,11 @@ const DB_FIELD_OPTIONS = [
   { value: 'cash_collected', label: 'Cash Collected ($)', types: ['deals'] },
   { value: 'cash_after_fees', label: 'Cash After Fees ($)', types: ['deals'] },
   { value: 'fees_amount', label: 'Fees Amount ($)', types: ['deals'] },
+  { value: 'call_status', label: 'Call Status (Closed/No Show/No Close)', types: ['deals', 'appointments', 'calls'] },
   { value: 'deal_status', label: 'Deal Status', types: ['deals'] },
   { value: 'payment_platform', label: 'Payment Platform/Type', types: ['deals'] },
   { value: 'closed_at', label: 'Closed At (Date)', types: ['deals'] },
+  { value: 'recording_url', label: 'Recording URL', types: ['appointments', 'calls', 'deals'] },
   
   // Common fields
   { value: 'name', label: 'Name/Lead Name', types: ['leads', 'appointments', 'calls', 'deals'] },
@@ -79,10 +81,8 @@ const DB_FIELD_OPTIONS = [
   { value: 'pipeline', label: 'Pipeline', types: ['appointments'] },
   
   // Form compliance fields
-  { value: 'post_set_form_filled', label: 'Post Set Form (Checkbox)', types: ['appointments', 'calls'] },
-  { value: 'closer_form_filled', label: 'Closer Form Filled (Checkbox)', types: ['appointments', 'calls'] },
-  { value: 'call_status', label: 'Call Status/Result', types: ['appointments', 'calls'] },
-  { value: 'recording_url', label: 'Recording URL', types: ['appointments', 'calls', 'deals'] },
+  { value: 'post_set_form_filled', label: 'Post Set Form (Checkbox)', types: ['appointments', 'calls', 'deals'] },
+  { value: 'closer_form_filled', label: 'Closer Form Filled (Checkbox)', types: ['appointments', 'calls', 'deals'] },
   
   // Team fields
   { value: 'full_name', label: 'Full Name', types: ['team'] },

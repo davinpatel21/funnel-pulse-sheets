@@ -32,9 +32,20 @@ const SHEET_TYPE_OPTIONS = [
 ];
 
 const DB_FIELD_OPTIONS = [
+  // Deal/Revenue fields - prioritize for Post Call sheets
+  { value: 'revenue_amount', label: 'Revenue Amount ($)', types: ['deals'] },
+  { value: 'cash_collected', label: 'Cash Collected ($)', types: ['deals'] },
+  { value: 'cash_after_fees', label: 'Cash After Fees ($)', types: ['deals'] },
+  { value: 'fees_amount', label: 'Fees Amount ($)', types: ['deals'] },
+  { value: 'call_status', label: 'Call Status (Closed/No Show/No Close)', types: ['deals', 'appointments', 'calls'] },
+  { value: 'deal_status', label: 'Deal Status', types: ['deals'] },
+  { value: 'payment_platform', label: 'Payment Platform/Type', types: ['deals'] },
+  { value: 'closed_at', label: 'Closed At (Date)', types: ['deals'] },
+  { value: 'recording_url', label: 'Recording URL', types: ['appointments', 'calls', 'deals'] },
+  
   // Common fields
   { value: 'name', label: 'Name', types: ['leads', 'appointments', 'calls', 'deals'] },
-  { value: 'email', label: 'Email', types: ['leads', 'team'] },
+  { value: 'email', label: 'Email', types: ['leads', 'team', 'deals'] },
   { value: 'phone', label: 'Phone', types: ['leads', 'team'] },
   { value: 'notes', label: 'Notes', types: ['leads', 'appointments', 'calls', 'deals'] },
   
@@ -48,20 +59,9 @@ const DB_FIELD_OPTIONS = [
   { value: 'booked_at', label: 'Booked At', types: ['appointments'] },
   { value: 'setter_name', label: 'Setter Name', types: ['appointments', 'calls', 'deals'] },
   { value: 'closer_name', label: 'Closer Name', types: ['appointments', 'calls', 'deals'] },
-  { value: 'post_set_form_filled', label: 'Post Set Form (Checkbox)', types: ['appointments', 'calls'] },
-  { value: 'closer_form_filled', label: 'Closer Form Filled (Checkbox)', types: ['appointments', 'calls'] },
-  { value: 'call_status', label: 'Call Status/Result', types: ['appointments', 'calls'] },
-  { value: 'recording_url', label: 'Recording URL', types: ['appointments', 'calls'] },
+  { value: 'post_set_form_filled', label: 'Post Set Form (Checkbox)', types: ['appointments', 'calls', 'deals'] },
+  { value: 'closer_form_filled', label: 'Closer Form Filled (Checkbox)', types: ['appointments', 'calls', 'deals'] },
   { value: 'pipeline', label: 'Pipeline', types: ['appointments'] },
-  
-  // Deal/Revenue fields
-  { value: 'revenue_amount', label: 'Revenue Amount ($)', types: ['deals'] },
-  { value: 'cash_collected', label: 'Cash Collected ($)', types: ['deals'] },
-  { value: 'cash_after_fees', label: 'Cash After Fees ($)', types: ['deals'] },
-  { value: 'fees_amount', label: 'Fees Amount ($)', types: ['deals'] },
-  { value: 'deal_status', label: 'Deal Status', types: ['deals'] },
-  { value: 'payment_platform', label: 'Payment Platform/Type', types: ['deals'] },
-  { value: 'closed_at', label: 'Closed At (Date)', types: ['deals'] },
   
   // Team fields
   { value: 'full_name', label: 'Full Name', types: ['team'] },
