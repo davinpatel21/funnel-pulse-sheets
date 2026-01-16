@@ -510,12 +510,13 @@ FORM COMPLIANCE FIELDS (Checkbox/Boolean columns - checkmark=filled, empty=not f
 - "Closer Form Filled" / "Closer Form" / "Post Call Form Filled" → dbField: "closer_form_filled" - TRUE/checkmark = form was filled
 
 DEAL/REVENUE FIELDS (for deals type - POST CALL SHEET):
-- "Revenue" / "Revenue Amount" / "Total Revenue" / "Sale Amount" → dbField: "revenue_amount"
+- "Revenue" / "Revenue Amount" / "Total Revenue" / "Sale Amount" / "Revenue Generated" → dbField: "revenue_amount"
 - "Cash Collected" / "Amount Paid" / "Collected" → dbField: "cash_collected"
+- "Cash Collected After Fees" / "Net Revenue" / "After Fees" → dbField: "cash_after_fees"
 - "Fees" / "Fees Amount" / "Processing Fees" → dbField: "fees_amount"
-- "Deal Status" / "Sale Status" / "Won/Lost" → dbField: "deal_status"
-- "Payment Platform" / "Payment Method" → dbField: "payment_platform"
-- "Closed Date" / "Close Date" → dbField: "closed_at"
+- "Deal Status" / "Sale Status" / "Won/Lost" / "Status" (for Post Call sheet) → dbField: "deal_status"
+- "Payment Platform" / "Payment Method" / "Payment Type" → dbField: "payment_platform"
+- "Closed Date" / "Close Date" / "Date (Clean)" / "Timestamp" → dbField: "closed_at"
 
 STATUS MAPPING (CRITICAL):
 - "Call Status" / "Status" / "Result" → dbField: "call_status" (custom_fields.call_status)
