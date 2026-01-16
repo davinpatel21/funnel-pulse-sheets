@@ -414,8 +414,11 @@ serve(async (req) => {
           record.lead_email = record.lead_email || record.email;
           record.setter_name = record.setter_name || record.setter || record.set_by;
           record.closer_name = record.closer_name || record.closer || record.closer_assigned;
-          record.deal_status = record.deal_status || record.status || record.outcome;
-          record.stage = normalizeDealStage(record.stage || record.deal_status);
+          
+          // Call Status - critical for shows/no-shows/close tracking
+          record.call_status = record.call_status || record.deal_status || record.status || record.outcome || '';
+          record.deal_status = record.call_status; // Alias for compatibility
+          record.stage = normalizeDealStage(record.stage || record.call_status);
           
           // Revenue fields - handle currency symbols and commas
           record.revenue_amount = parseFloat(

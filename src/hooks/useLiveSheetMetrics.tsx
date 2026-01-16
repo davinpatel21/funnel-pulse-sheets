@@ -95,7 +95,7 @@ function applyFilters(data: any[], filters: DashboardFilters) {
 }
 
 function calculateMetrics(leads: any[], appointments: any[], deals: any[], calls: any[]) {
-  // REVENUE METRICS (from deals or from appointment custom_fields if deals embedded)
+  // REVENUE METRICS (from deals)
   const dealsData = deals.length > 0 ? deals : 
     appointments.filter(a => a.revenue_amount || a.custom_fields?.revenue);
   
@@ -112,37 +112,48 @@ function calculateMetrics(leads: any[], appointments: any[], deals: any[], calls
   const totalFees = dealsData.reduce((sum, d) => d.fees_amount || 0, 0);
   const cashAfterFees = totalCashCollected - totalFees;
   
-  // APPOINTMENT METRICS
-  const totalAppointmentsBooked = appointments.length;
+  // COMBINED APPOINTMENTS - Use appointments OR deals if no appointments sheet
+  // When Post Call sheet is typed as 'deals', use it for both revenue AND call/status tracking
+  const callRecords = appointments.length > 0 ? appointments : deals;
+  const totalAppointmentsBooked = callRecords.length;
   
-  // Status breakdown - check both status field and custom_fields.callStatus
-  const getCallStatus = (appt: any) => {
-    const status = appt.custom_fields?.callStatus || appt.status || '';
-    return status.toLowerCase().trim();
+  // Status breakdown - check call_status, deal_status, status, and custom_fields
+  const getCallStatus = (record: any) => {
+    const status = record.call_status || record.deal_status || record.custom_fields?.callStatus || record.status || '';
+    return String(status).toLowerCase().trim();
   };
   
-  const closedAppts = appointments.filter(a => {
-    const status = getCallStatus(a);
-    return status === 'closed' || status.includes('won') || a.created_deal === true;
+  // Count closed deals (Closed status or has revenue)
+  const closedRecords = callRecords.filter(r => {
+    const status = getCallStatus(r);
+    return status === 'closed' || status.includes('won') || 
+           (r.revenue_amount && r.revenue_amount > 0) || r.created_deal === true;
   });
   
-  const noShows = appointments.filter(a => {
-    const status = getCallStatus(a);
-    return status.includes('no show') || status === 'no_show' || status === 'dns';
-  }).length;
+  // No Shows
+  const noShowRecords = callRecords.filter(r => {
+    const status = getCallStatus(r);
+    return status.includes('no show') || status === 'no_show' || status === 'dns' || status === 'noshow';
+  });
+  const noShows = noShowRecords.length;
   
-  const shows = appointments.filter(a => {
-    const status = getCallStatus(a);
-    return a.status === 'completed' || status === 'closed' || status === 'no close' || status.includes('qualified');
-  }).length;
+  // Shows = attended calls (Closed + No Close + other attended statuses)
+  const showRecords = callRecords.filter(r => {
+    const status = getCallStatus(r);
+    // "Shows" are calls that were attended (not no-shows, not scheduled/pending)
+    return status === 'closed' || status === 'no close' || status === 'noclose' ||
+           status.includes('qualified') || status === 'completed' ||
+           (r.revenue_amount && r.revenue_amount > 0);
+  });
+  const shows = showRecords.length;
   
   // RATE CALCULATIONS
   const showRate = totalAppointmentsBooked > 0 ? (shows / totalAppointmentsBooked) * 100 : 0;
   const noShowRate = totalAppointmentsBooked > 0 ? (noShows / totalAppointmentsBooked) * 100 : 0;
-  const closeRate = shows > 0 ? (closedAppts.length / shows) * 100 : 0;
+  const closeRate = shows > 0 ? (closedRecords.length / shows) * 100 : 0;
   
-  // DEAL METRICS
-  const totalDeals = closedAppts.length;
+  // DEAL METRICS - use deals data directly for count
+  const totalDeals = closedRecords.length;
   const avgDealSize = totalDeals > 0 ? totalRevenue / totalDeals : 0;
   
   // CALL METRICS
@@ -153,60 +164,59 @@ function calculateMetrics(leads: any[], appointments: any[], deals: any[], calls
   // PAYMENT PROCESSOR FEE TRACKING
   const processorFeePercentage = totalRevenue > 0 ? (totalFees / totalRevenue) * 100 : 0;
   
-  // SOURCE PERFORMANCE
+  // SOURCE PERFORMANCE - use combined call records
   const sourcePerformance: Record<string, any> = {};
-  appointments.forEach(a => {
-    const source = a.custom_fields?.utmSource || a.utm_source || 'unknown';
+  callRecords.forEach(r => {
+    const source = r.custom_fields?.utmSource || r.utm_source || r.source || 'unknown';
     if (!sourcePerformance[source]) {
       sourcePerformance[source] = { appts: 0, revenue: 0, deals: 0 };
     }
     sourcePerformance[source].appts++;
-    if (a.created_deal || closedAppts.includes(a)) {
+    if (closedRecords.includes(r)) {
       sourcePerformance[source].deals++;
-      const rev = a.revenue_amount || parseFloat(a.custom_fields?.revenue?.replace(/[$,]/g, '') || '0');
+      const rev = r.revenue_amount || parseFloat(r.custom_fields?.revenue?.replace(/[$,]/g, '') || '0');
       sourcePerformance[source].revenue += rev;
     }
   });
   
-  // CLOSER PERFORMANCE
+  // CLOSER PERFORMANCE - use combined call records
   const closerPerformance: Record<string, any> = {};
-  appointments.forEach(a => {
-    const closer = a.custom_fields?.closerName || a.pipeline || 'Unassigned';
+  callRecords.forEach(r => {
+    const closer = r.closer_name || r.custom_fields?.closerName || r.pipeline || 'Unassigned';
     if (!closerPerformance[closer]) {
       closerPerformance[closer] = { appts: 0, shows: 0, noShows: 0, deals: 0, revenue: 0 };
     }
     closerPerformance[closer].appts++;
     
-    const status = getCallStatus(a);
-    if (status.includes('no show') || a.status === 'no_show') {
+    if (noShowRecords.includes(r)) {
       closerPerformance[closer].noShows++;
-    } else if (a.status === 'completed') {
+    } else if (showRecords.includes(r)) {
       closerPerformance[closer].shows++;
     }
     
-    if (a.created_deal || closedAppts.includes(a)) {
+    if (closedRecords.includes(r)) {
       closerPerformance[closer].deals++;
-      const rev = a.revenue_amount || parseFloat(a.custom_fields?.revenue?.replace(/[$,]/g, '') || '0');
+      const rev = r.revenue_amount || parseFloat(r.custom_fields?.revenue?.replace(/[$,]/g, '') || '0');
       closerPerformance[closer].revenue += rev;
     }
   });
   
-  // SETTER PERFORMANCE
+  // SETTER PERFORMANCE - use combined call records
   const setterPerformance: Record<string, any> = {};
-  appointments.forEach(a => {
-    const setter = a.custom_fields?.setterName || a.custom_fields?.setBy || 'Unassigned';
+  callRecords.forEach(r => {
+    const setter = r.setter_name || r.custom_fields?.setterName || r.custom_fields?.setBy || 'Unassigned';
     if (!setterPerformance[setter]) {
       setterPerformance[setter] = { appts: 0, shows: 0, deals: 0, revenue: 0 };
     }
     setterPerformance[setter].appts++;
     
-    if (a.status === 'completed') {
+    if (showRecords.includes(r)) {
       setterPerformance[setter].shows++;
     }
     
-    if (a.created_deal || closedAppts.includes(a)) {
+    if (closedRecords.includes(r)) {
       setterPerformance[setter].deals++;
-      const rev = a.revenue_amount || parseFloat(a.custom_fields?.revenue?.replace(/[$,]/g, '') || '0');
+      const rev = r.revenue_amount || parseFloat(r.custom_fields?.revenue?.replace(/[$,]/g, '') || '0');
       setterPerformance[setter].revenue += rev;
     }
   });
@@ -219,96 +229,92 @@ function calculateMetrics(leads: any[], appointments: any[], deals: any[], calls
   });
   
   // TIME METRICS
-  const appointmentsWithDates = appointments.filter(a => a.booked_at && a.scheduled_at);
-  const avgDaysToBook = appointmentsWithDates.length > 0
-    ? appointmentsWithDates.reduce((sum, a) => {
-        const bookedTime = new Date(a.booked_at).getTime();
-        const scheduledTime = new Date(a.scheduled_at).getTime();
+  const recordsWithDates = callRecords.filter(r => r.booked_at && r.scheduled_at);
+  const avgDaysToBook = recordsWithDates.length > 0
+    ? recordsWithDates.reduce((sum, r) => {
+        const bookedTime = new Date(r.booked_at).getTime();
+        const scheduledTime = new Date(r.scheduled_at).getTime();
         const days = (scheduledTime - bookedTime) / (1000 * 60 * 60 * 24);
         return sum + days;
-      }, 0) / appointmentsWithDates.length
+      }, 0) / recordsWithDates.length
     : 0;
 
-  // FIX APPOINTMENT STATUS COUNTS - Use Call Status values from sheet
+  // APPOINTMENT STATUS COUNTS - Use call status from combined records
   const appointmentStatusCounts: Record<string, number> = {};
-  appointments.forEach(a => {
-    const callStatus = getCallStatus(a);
+  callRecords.forEach(r => {
+    const status = getCallStatus(r);
     let displayStatus = 'Other';
     
-    if (callStatus === 'closed' || callStatus.includes('won') || a.created_deal) {
+    if (status === 'closed' || status.includes('won') || (r.revenue_amount && r.revenue_amount > 0)) {
       displayStatus = 'Closed';
-    } else if (callStatus.includes('no show') || callStatus === 'no_show') {
+    } else if (status.includes('no show') || status === 'no_show' || status === 'noshow') {
       displayStatus = 'No Show';
-    } else if (callStatus === 'no close' || callStatus.includes('no close')) {
+    } else if (status === 'no close' || status.includes('no close') || status === 'noclose') {
       displayStatus = 'No Close';
-    } else if (callStatus === 'scheduled' || a.status === 'scheduled') {
+    } else if (status === 'scheduled') {
       displayStatus = 'Scheduled';
     }
     
     appointmentStatusCounts[displayStatus] = (appointmentStatusCounts[displayStatus] || 0) + 1;
   });
   
-  // FIX LEAD SOURCE COUNTS - Use UTM Source from appointments
+  // LEAD SOURCE COUNTS - Use UTM Source from combined records
   const leadSourceCounts: Record<string, number> = {};
-  appointments.forEach(a => {
-    const source = a.custom_fields?.utmSource || a.utm_source || 'Unknown';
+  callRecords.forEach(r => {
+    const source = r.custom_fields?.utmSource || r.utm_source || r.source || 'Unknown';
     leadSourceCounts[source] = (leadSourceCounts[source] || 0) + 1;
   });
 
-  // FORM COMPLIANCE METRICS
-  // Setter form compliance (for all appointments with a setter)
-  const appointmentsWithSetter = appointments.filter(a => 
-    a.setter_name || a.custom_fields?.setterName || a.custom_fields?.setBy
+  // FORM COMPLIANCE METRICS - use combined call records
+  // Setter form compliance (for all records with a setter)
+  const recordsWithSetter = callRecords.filter(r => 
+    r.setter_name || r.custom_fields?.setterName || r.custom_fields?.setBy
   );
-  const setterFormsFilled = appointmentsWithSetter.filter(a => 
-    a.post_set_form_filled || a.custom_fields?.postSetFormFilled
+  const setterFormsFilled = recordsWithSetter.filter(r => 
+    r.post_set_form_filled || r.custom_fields?.postSetFormFilled
   ).length;
-  const setterFormComplianceRate = appointmentsWithSetter.length > 0 
-    ? (setterFormsFilled / appointmentsWithSetter.length) * 100 
+  const setterFormComplianceRate = recordsWithSetter.length > 0 
+    ? (setterFormsFilled / recordsWithSetter.length) * 100 
     : 0;
 
-  // Closer form compliance (only for completed/attended appointments)
-  const completedAppointments = appointments.filter(a => {
-    const status = getCallStatus(a);
-    return a.status === 'completed' || status === 'closed' || status === 'no close';
-  });
-  const closerFormsFilled = completedAppointments.filter(a => 
-    a.closer_form_filled || a.custom_fields?.closerFormFilled
+  // Closer form compliance (only for completed/attended calls - shows)
+  const closerFormsFilled = showRecords.filter(r => 
+    r.closer_form_filled || r.custom_fields?.closerFormFilled
   ).length;
-  const closerFormComplianceRate = completedAppointments.length > 0 
-    ? (closerFormsFilled / completedAppointments.length) * 100 
+  const closerFormComplianceRate = showRecords.length > 0 
+    ? (closerFormsFilled / showRecords.length) * 100 
     : 0;
 
   // Missing forms (for "Who's Dropping the Ball" section)
-  const missingSetterForms = appointmentsWithSetter.filter(a => 
-    !a.post_set_form_filled && !a.custom_fields?.postSetFormFilled
-  ).map(a => ({
-    id: a.appointment_id || a.id,
-    leadName: a.lead_name || a.name,
-    personName: a.setter_name || a.custom_fields?.setterName || a.custom_fields?.setBy || 'Unknown',
+  const missingSetterForms = recordsWithSetter.filter(r => 
+    !r.post_set_form_filled && !r.custom_fields?.postSetFormFilled
+  ).map(r => ({
+    id: r.appointment_id || r.deal_id || r.id,
+    leadName: r.lead_name || r.name,
+    personName: r.setter_name || r.custom_fields?.setterName || r.custom_fields?.setBy || 'Unknown',
     formType: 'setter' as const,
-    bookedAt: a.booked_at || a.scheduled_for || a.created_at,
+    bookedAt: r.booked_at || r.scheduled_for || r.created_at || r.close_date,
   }));
 
-  const missingCloserForms = completedAppointments.filter(a => 
-    !a.closer_form_filled && !a.custom_fields?.closerFormFilled
-  ).map(a => ({
-    id: a.appointment_id || a.id,
-    leadName: a.lead_name || a.name,
-    personName: a.closer_name || a.custom_fields?.closerName || a.pipeline || 'Unknown',
+  const missingCloserForms = showRecords.filter(r => 
+    !r.closer_form_filled && !r.custom_fields?.closerFormFilled
+  ).map(r => ({
+    id: r.appointment_id || r.deal_id || r.id,
+    leadName: r.lead_name || r.name,
+    personName: r.closer_name || r.custom_fields?.closerName || r.pipeline || 'Unknown',
     formType: 'closer' as const,
-    bookedAt: a.booked_at || a.scheduled_for || a.created_at,
+    bookedAt: r.booked_at || r.scheduled_for || r.created_at || r.close_date,
   }));
 
   // Per-person compliance breakdown
   const setterCompliance: Record<string, { total: number; filled: number; rate: number }> = {};
-  appointmentsWithSetter.forEach(a => {
-    const setter = a.setter_name || a.custom_fields?.setterName || a.custom_fields?.setBy || 'Unknown';
+  recordsWithSetter.forEach(r => {
+    const setter = r.setter_name || r.custom_fields?.setterName || r.custom_fields?.setBy || 'Unknown';
     if (!setterCompliance[setter]) {
       setterCompliance[setter] = { total: 0, filled: 0, rate: 0 };
     }
     setterCompliance[setter].total++;
-    if (a.post_set_form_filled || a.custom_fields?.postSetFormFilled) {
+    if (r.post_set_form_filled || r.custom_fields?.postSetFormFilled) {
       setterCompliance[setter].filled++;
     }
   });
@@ -318,13 +324,13 @@ function calculateMetrics(leads: any[], appointments: any[], deals: any[], calls
   });
 
   const closerCompliance: Record<string, { total: number; filled: number; rate: number }> = {};
-  completedAppointments.forEach(a => {
-    const closer = a.closer_name || a.custom_fields?.closerName || a.pipeline || 'Unknown';
+  showRecords.forEach(r => {
+    const closer = r.closer_name || r.custom_fields?.closerName || r.pipeline || 'Unknown';
     if (!closerCompliance[closer]) {
       closerCompliance[closer] = { total: 0, filled: 0, rate: 0 };
     }
     closerCompliance[closer].total++;
-    if (a.closer_form_filled || a.custom_fields?.closerFormFilled) {
+    if (r.closer_form_filled || r.custom_fields?.closerFormFilled) {
       closerCompliance[closer].filled++;
     }
   });
@@ -362,8 +368,8 @@ function calculateMetrics(leads: any[], appointments: any[], deals: any[], calls
     closerFormComplianceRate,
     setterFormsFilled,
     closerFormsFilled,
-    totalSetterFormsRequired: appointmentsWithSetter.length,
-    totalCloserFormsRequired: completedAppointments.length,
+    totalSetterFormsRequired: recordsWithSetter.length,
+    totalCloserFormsRequired: showRecords.length,
     missingSetterForms,
     missingCloserForms,
     setterCompliance,
