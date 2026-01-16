@@ -412,12 +412,35 @@ serve(async (req) => {
           record.deal_id = record.deal_id || record.id || `deal-${index}`;
           record.lead_name = record.lead_name || record.name || record.full_name;
           record.lead_email = record.lead_email || record.email;
-          record.closer_name = record.closer_name || record.closer;
-          record.stage = normalizeDealStage(record.stage || record.status);
-          record.amount = parseFloat(String(record.amount || record.revenue || record.revenue_amount || '0').replace(/[$,]/g, '')) || 0;
-          record.cash_collected = parseFloat(String(record.cash_collected || '0').replace(/[$,]/g, '')) || 0;
+          record.setter_name = record.setter_name || record.setter || record.set_by;
+          record.closer_name = record.closer_name || record.closer || record.closer_assigned;
+          record.deal_status = record.deal_status || record.status || record.outcome;
+          record.stage = normalizeDealStage(record.stage || record.deal_status);
+          
+          // Revenue fields - handle currency symbols and commas
+          record.revenue_amount = parseFloat(
+            String(record.revenue_amount || record.revenue || record.revenue_generated || record.amount || '0')
+              .replace(/[$,]/g, '')
+          ) || 0;
+          
+          record.cash_collected = parseFloat(
+            String(record.cash_collected || '0').replace(/[$,]/g, '')
+          ) || 0;
+          
+          record.cash_after_fees = parseFloat(
+            String(record.cash_after_fees || record.cash_collected_after_fees || '0')
+              .replace(/[$,]/g, '')
+          ) || 0;
+          
+          record.fees_amount = parseFloat(
+            String(record.fees_amount || record.fees || record.processing_fees || '0')
+              .replace(/[$,]/g, '')
+          ) || 0;
+          
+          record.payment_platform = record.payment_platform || record.payment_type || record.payment_method;
           record.currency = record.currency || 'USD';
-          record.close_date = record.close_date || record.closed_at;
+          record.close_date = record.close_date || record.closed_at || record.timestamp;
+          record.recording_url = record.recording_url || record.call_recording || record.call_recording_fathom;
           break;
       }
 

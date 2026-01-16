@@ -57,9 +57,10 @@ const DB_FIELD_OPTIONS = [
   // Deal/Revenue fields
   { value: 'revenue_amount', label: 'Revenue Amount ($)', types: ['deals'] },
   { value: 'cash_collected', label: 'Cash Collected ($)', types: ['deals'] },
+  { value: 'cash_after_fees', label: 'Cash After Fees ($)', types: ['deals'] },
   { value: 'fees_amount', label: 'Fees Amount ($)', types: ['deals'] },
   { value: 'deal_status', label: 'Deal Status', types: ['deals'] },
-  { value: 'payment_platform', label: 'Payment Platform', types: ['deals'] },
+  { value: 'payment_platform', label: 'Payment Platform/Type', types: ['deals'] },
   { value: 'closed_at', label: 'Closed At (Date)', types: ['deals'] },
   
   // Team fields

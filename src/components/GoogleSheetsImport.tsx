@@ -51,48 +51,52 @@ const SHEET_TYPE_OPTIONS = [
 ];
 
 const DB_FIELD_OPTIONS = [
+  // Deal/Revenue fields (for Post Call sheet) - FIRST for visibility
+  { value: 'revenue_amount', label: 'Revenue Amount ($)', types: ['deals'] },
+  { value: 'cash_collected', label: 'Cash Collected ($)', types: ['deals'] },
+  { value: 'cash_after_fees', label: 'Cash After Fees ($)', types: ['deals'] },
+  { value: 'fees_amount', label: 'Fees Amount ($)', types: ['deals'] },
+  { value: 'deal_status', label: 'Deal Status', types: ['deals'] },
+  { value: 'payment_platform', label: 'Payment Platform/Type', types: ['deals'] },
+  { value: 'closed_at', label: 'Closed At (Date)', types: ['deals'] },
+  
   // Common fields
-  { value: 'name', label: 'Name' },
-  { value: 'email', label: 'Email' },
-  { value: 'phone', label: 'Phone' },
-  { value: 'notes', label: 'Notes' },
+  { value: 'name', label: 'Name/Lead Name', types: ['leads', 'appointments', 'calls', 'deals'] },
+  { value: 'email', label: 'Email', types: ['leads', 'appointments', 'calls', 'deals', 'team'] },
+  { value: 'phone', label: 'Phone', types: ['leads', 'team'] },
+  { value: 'notes', label: 'Notes', types: ['leads', 'appointments', 'calls', 'deals'] },
   
   // Lead fields
-  { value: 'source', label: 'Lead Source' },
-  { value: 'status', label: 'Status' },
-  { value: 'utm_source', label: 'UTM Source' },
+  { value: 'source', label: 'Lead Source', types: ['leads'] },
+  { value: 'status', label: 'Lead Status', types: ['leads'] },
+  { value: 'utm_source', label: 'UTM Source', types: ['leads'] },
   
   // Appointment/Call fields
-  { value: 'setter_id', label: 'Setter' },
-  { value: 'closer_id', label: 'Closer' },
-  { value: 'setter_name', label: 'Setter Name' },
-  { value: 'closer_name', label: 'Closer Name' },
-  { value: 'scheduled_at', label: 'Scheduled At' },
-  { value: 'booked_at', label: 'Booked At' },
-  { value: 'pipeline', label: 'Pipeline' },
+  { value: 'setter_name', label: 'Setter Name', types: ['appointments', 'calls', 'deals'] },
+  { value: 'closer_name', label: 'Closer Name', types: ['appointments', 'calls', 'deals'] },
+  { value: 'scheduled_at', label: 'Scheduled At', types: ['appointments'] },
+  { value: 'booked_at', label: 'Booked At', types: ['appointments'] },
+  { value: 'pipeline', label: 'Pipeline', types: ['appointments'] },
   
   // Form compliance fields
-  { value: 'post_set_form_filled', label: 'Post Set Form (Checkbox)' },
-  { value: 'closer_form_filled', label: 'Closer Form Filled (Checkbox)' },
-  { value: 'call_status', label: 'Call Status/Result' },
-  { value: 'recording_url', label: 'Recording URL' },
-  
-  // Deal/Revenue fields (for Post Call sheet)
-  { value: 'revenue_amount', label: 'Revenue Amount ($)' },
-  { value: 'cash_collected', label: 'Cash Collected ($)' },
-  { value: 'fees_amount', label: 'Fees Amount ($)' },
-  { value: 'deal_status', label: 'Deal Status' },
-  { value: 'payment_platform', label: 'Payment Platform' },
-  { value: 'closed_at', label: 'Closed At (Date)' },
+  { value: 'post_set_form_filled', label: 'Post Set Form (Checkbox)', types: ['appointments', 'calls'] },
+  { value: 'closer_form_filled', label: 'Closer Form Filled (Checkbox)', types: ['appointments', 'calls'] },
+  { value: 'call_status', label: 'Call Status/Result', types: ['appointments', 'calls'] },
+  { value: 'recording_url', label: 'Recording URL', types: ['appointments', 'calls', 'deals'] },
   
   // Team fields
-  { value: 'full_name', label: 'Full Name (Team)' },
-  { value: 'role', label: 'Role (Team)' },
+  { value: 'full_name', label: 'Full Name', types: ['team'] },
+  { value: 'role', label: 'Role', types: ['team'] },
   
   // Universal
-  { value: 'custom', label: '→ Custom Field' },
-  { value: 'skip', label: '✕ Skip this column' },
+  { value: 'custom', label: '→ Custom Field', types: ['leads', 'appointments', 'calls', 'deals', 'team'] },
+  { value: 'skip', label: '✕ Skip this column', types: ['leads', 'appointments', 'calls', 'deals', 'team'] },
 ];
+
+// Helper to get contextual field options based on sheet type
+const getFieldOptionsForType = (sheetType: string) => {
+  return DB_FIELD_OPTIONS.filter(opt => opt.types.includes(sheetType));
+};
 
 export function GoogleSheetsImport({ 
   spreadsheetId, 
@@ -736,7 +740,7 @@ export function GoogleSheetsImport({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {DB_FIELD_OPTIONS.map(option => (
+                          {getFieldOptionsForType(ta.sheetTypeOverride || ta.analysis?.sheet_type || 'leads').map(option => (
                             <SelectItem key={option.value} value={option.value}>
                               {option.label}
                             </SelectItem>
